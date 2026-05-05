@@ -83,3 +83,21 @@
 - `.gitignore`：加 `.cache/`（clangd LSP 缓存）
 
 **关键经验**：观察到的"硬件异常"在没复现成稳定相之前不要急着归因。瞬时黑相是 LUT 中间相位，与稳定显示边界无关；用户最初的"满屏黑覆盖"观察其实是 LUT 电压扫描特性，不是 RAM 寻址范围的证据。下次遇到边界类问题，**先做一组对照实验区分稳定相和瞬时相**再下结论。
+
+## 节点 4 — 嵌入 8×8 字体与 helloWorld 演示
+
+代码改动：
+- 新增 `components/epaper_154/font8x8_basic.h`：从 github.com/dhepper/font8x8 抓取的公共域 8×8 字模（128 个 ASCII 字符，每字符 8 字节，每字节 LSB 在左）。本地化处理：原文件第 23 行 `char font8x8_basic[128][8] =` 改为 `static const uint8_t font8x8_basic[128][8] =`，并加 `#pragma once` + `#include <stdint.h>`，让数据走 .rodata 不占 RAM、多 .c 包含也不重复定义
+- `epaper_154.h`：新增 `epaper_draw_string_8x8(int x, int y, const char *s, bool black)`
+- `epaper_154.c`：实现 draw_string_8x8。**关键点**：font8x8 字模每字节 LSB(bit0) 对应较小 X，与帧缓冲 MSB→较小 X 顺序相反，扫描位时用 `bits & (1u << col)`（不是 `0x80 >> col`）。≥128 的字符跳过但仍占 8 像素宽
+- `main/main.c`：流程改为 `init → clear(0xFF) → draw_string(10,10,"Hello, IDF!") → draw_hline(0,30,EPD_W) → draw_string(10,40,"GDEW0154T8 OK") → display_full → sleep`
+
+验证：屏上稳定显示
+- 第 1 行 "Hello, IDF!"
+- y=30 一条横线
+- 第 2 行 "GDEW0154T8 OK"
+- 字符形态正常、无错位、无残影、无颠倒
+
+串口日志同前节点：DisplayRefresh ~1550ms、PowerOff、Deep Sleep。
+
+**关键经验**：嵌入第三方字体源文件时，先决定它在内存里的归属——`char xxx[][]=` 在头文件里被多次包含会产生多重定义/内存膨胀；改 `static const uint8_t` 一行就能让它走 .rodata、避免链接冲突、还多一层类型语义。这个改动属于"接入"而非"修改字体内容"，与公共域许可不冲突。

@@ -11,6 +11,7 @@
 //   - 屏分辨率为 152×152（不是 200×200）
 
 #include "epaper_154.h"
+#include "font8x8_basic.h"
 #include "il0373_cmd.h"
 
 #include <string.h>
@@ -302,6 +303,27 @@ void epaper_draw_hline(int x, int y, int len, bool black)
     if (len <= 0) return;
     for (int i = 0; i < len; i++) {
         epaper_draw_pixel(x + i, y, black);
+    }
+}
+
+void epaper_draw_string_8x8(int x, int y, const char *s, bool black)
+{
+    if (s == NULL) return;
+    int cx = x;
+    while (*s) {
+        unsigned char ch = (unsigned char)*s++;
+        if (ch >= 128) { cx += 8; continue; }      // 仅支持 ASCII 0-127
+        const uint8_t *glyph = font8x8_basic[ch];
+        for (int row = 0; row < 8; row++) {
+            uint8_t bits = glyph[row];
+            // font8x8 每字节 LSB(bit0) 对应较小 X，与画点 MSB 顺序相反
+            for (int col = 0; col < 8; col++) {
+                if (bits & (1u << col)) {
+                    epaper_draw_pixel(cx + col, y + row, black);
+                }
+            }
+        }
+        cx += 8;
     }
 }
 

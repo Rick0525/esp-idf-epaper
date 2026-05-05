@@ -27,6 +27,10 @@ void epaper_draw_pixel(int x, int y, bool black);
 // 在帧缓冲上画水平线（从 (x,y) 起向右 len 像素）。越界部分自动裁剪
 void epaper_draw_hline(int x, int y, int len, bool black);
 
+// 用 8×8 单色字体在帧缓冲上画字符串（左上角 (x,y)，每字符占 8 像素宽）
+// 仅渲染 ASCII 0-127；遇到不在范围的字符或 NUL 终止
+void epaper_draw_string_8x8(int x, int y, const char *s, bool black);
+
 // 把帧缓冲写入显存并触发一次全刷新（约 1.6 秒，等 BUSY 拉到空闲后返回）
 // 内部含完整 IL0373 init 序列、5 张 LUT 下发、Power On
 esp_err_t epaper_display_full(void);
