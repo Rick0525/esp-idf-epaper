@@ -282,6 +282,29 @@ void epaper_clear(uint8_t color)
     memset(s_framebuf, color, sizeof(s_framebuf));
 }
 
+void epaper_draw_pixel(int x, int y, bool black)
+{
+    if ((unsigned)x >= EPD_W || (unsigned)y >= EPD_H) return;
+    size_t idx = (size_t)(x >> 3) + (size_t)y * (EPD_W >> 3);
+    uint8_t bit = 0x80 >> (x & 7);    // MSB 对应较小 X
+    if (black) {
+        s_framebuf[idx] &= ~bit;       // 0 = 黑
+    } else {
+        s_framebuf[idx] |= bit;        // 1 = 白
+    }
+}
+
+void epaper_draw_hline(int x, int y, int len, bool black)
+{
+    if (y < 0 || y >= EPD_H) return;
+    if (x < 0) { len += x; x = 0; }
+    if (x + len > EPD_W) len = EPD_W - x;
+    if (len <= 0) return;
+    for (int i = 0; i < len; i++) {
+        epaper_draw_pixel(x + i, y, black);
+    }
+}
+
 esp_err_t epaper_display_full(void)
 {
     esp_err_t err;

@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
 
@@ -19,6 +20,12 @@ esp_err_t epaper_init(void);
 
 // 用单一颜色填充帧缓冲。color=0xFF 全白，0x00 全黑
 void epaper_clear(uint8_t color);
+
+// 在帧缓冲上画单像素。坐标越界静默忽略；black=true 写黑、false 写白
+void epaper_draw_pixel(int x, int y, bool black);
+
+// 在帧缓冲上画水平线（从 (x,y) 起向右 len 像素）。越界部分自动裁剪
+void epaper_draw_hline(int x, int y, int len, bool black);
 
 // 把帧缓冲写入显存并触发一次全刷新（约 1.6 秒，等 BUSY 拉到空闲后返回）
 // 内部含完整 IL0373 init 序列、5 张 LUT 下发、Power On
