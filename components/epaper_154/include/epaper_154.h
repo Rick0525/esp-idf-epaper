@@ -1,4 +1,4 @@
-// 1.54 寸单色墨水屏（SSD1681 兼容）公开 API
+// 1.54 寸 GDEW0154T8 单色墨水屏（IL0373 控制器）公开 API
 //
 // 硬件接线（ESP32-PICO-KIT v4.1，固定不变）：
 //   CS  = GPIO5    MOSI = GPIO23   SCK = GPIO18   MISO 不接
@@ -7,8 +7,22 @@
 
 #pragma once
 
+#include <stdint.h>
 #include "esp_err.h"
 
-// 初始化：配置 GPIO + SPI 总线 + 硬件复位 + SW Reset 时序验证
-// 节点 1 范围：仅完成到 SW Reset，未做 SSD1681 init 序列
+// 屏幕分辨率（GDEW0154T8 实际为 152×152，对照 GxEPD2_154_T8::WIDTH/HEIGHT）
+#define EPD_W 152
+#define EPD_H 152
+
+// 初始化：GPIO + SPI 总线 + 硬件复位。屏命令序列推迟到 epaper_display_full 内执行
 esp_err_t epaper_init(void);
+
+// 用单一颜色填充帧缓冲。color=0xFF 全白，0x00 全黑
+void epaper_clear(uint8_t color);
+
+// 把帧缓冲写入显存并触发一次全刷新（约 1.6 秒，等 BUSY 拉到空闲后返回）
+// 内部含完整 IL0373 init 序列、5 张 LUT 下发、Power On
+esp_err_t epaper_display_full(void);
+
+// Power Off + Deep Sleep。下次使用前需重新 epaper_init
+esp_err_t epaper_sleep(void);
