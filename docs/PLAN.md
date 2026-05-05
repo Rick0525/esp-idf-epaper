@@ -164,4 +164,47 @@ ESP_ERROR_CHECK(epaper_sleep());
 - `/Users/rick/Documents/ESP32Projects/eink_screen/components/epaper_154/font8x8_basic.h`
 - `/Users/rick/Documents/ESP32Projects/eink_screen/docs/PLAN.md`
 - `/Users/rick/Documents/ESP32Projects/eink_screen/docs/CHANGELOG.md`
+- `/Users/rick/Documents/ESP32Projects/eink_screen/docs/HARDWARE_NOTES.md`
 - `/Users/rick/Documents/ESP32Projects/eink_screen/README.md`
+
+---
+
+## 后续节点候选（节点 0-5 已落地）
+
+PLAN 节点 0-5 已全部完成（项目骨架 → SPI/GPIO 验证 → IL0373 全刷驱动 → 帧缓冲与诊断图样 → 字体与 helloWorld → 文档收尾），主线移植结束。
+
+下面是从 Arduino `ink_test.ino` 对照得出的、还没移植的功能清单。按"实用价值 / 工作量"排序，每条都可独立成节点（一个原子提交）：
+
+### 高价值（强烈建议）
+
+| 候选节点 | 内容 | 工作量 | 关键要点 |
+|---|---|---|---|
+| **节点 6**：图形基元扩展 | 加 `epaper_draw_vline` / `epaper_draw_rect` / `epaper_fill_rect` | 半天 | 用现有 `draw_pixel` 凑就行，加边界裁剪。`fill_rect` 可走按字节优化（同行多个像素一起写） |
+| **节点 7**：rotation 旋转 | `epaper_set_rotation(0/1/2/3)`，画点函数内做坐标变换 | 半天 | 在 `draw_pixel` 入口前转换 (x,y)。`width()/height()` 接口随旋转交换 |
+| **节点 8**：partial refresh | `epaper_display_partial(x,y,w,h)`，下发第二组 partial LUT、用 0x91/0x90/0x92 限定窗口 | 一天 | 5 张 partial LUT 直接复制 `GxEPD2_154_T8.cpp::lut_*_partial`；耗时从 1.6s → ~350ms；残影会积累，工程上每 N 次 partial 后做一次全刷清屏 |
+| **节点 9**：GFX 字体支持 | `GFXfont/GFXglyph` 结构 + `epaper_draw_string_gfx`，嵌入一两个 Adafruit 字体（如 `FreeMonoBold9pt7b`） | 半天 | GFX 字体 MSB 在左（与帧缓冲一致），扫描方向比 8×8 字体更顺。需要 `getTextBounds` 辅助居中 |
+
+### 中价值（按需）
+
+| 候选节点 | 内容 |
+|---|---|
+| 圆 / 椭圆 / 三角形等 GFX 基元 | `draw_circle` / `fill_circle`，照搬 Adafruit_GFX 的 Bresenham 实现 |
+| 位图绘制 | `epaper_draw_bitmap(x, y, const uint8_t *bmp, w, h)`，本质就是按位 memcpy 进帧缓冲 |
+| 文本居中辅助 | `epaper_get_text_bounds(s, font, &w, &h)`，给 UI 居中对齐用 |
+| 中文字体 | U8g2 wqy 系列（GB2312 / 子集裁剪），或自己用 PIL 把 TTF 转点阵 |
+
+### 暂不计划（性价比低）
+
+- **paged drawing**（`firstPage/nextPage`）：给小 RAM MCU 用的分页机制，ESP32 全帧缓冲只占 2.9KB，完全不需要
+- **多尺寸 bitmap demo**（80×128, 200×200, 296×128…）：我们只这一块 152×152
+- **三色屏 / 7 色屏 demo**（`drawBitmaps3c*` / `draw7colors`）：屏是黑白单色
+
+### 工作流约定（与节点 0-5 保持一致）
+
+- 每节点一个原子 commit：`feat(epd): ...` 或 `docs: ...`
+- 流程：编辑 → build → flash → 肉眼/串口验证 → CHANGELOG 追加节点段 → commit
+- 失败立即回滚到上一节点排查，不在失败状态上叠加
+
+### 字体方案选型说明
+
+字体相关研究（U8g2 / GFX / DSEG / wqy / LVGL 字体的对比）见 `docs/HARDWARE_NOTES.md` 的"字体方案选型"小节。节点 9 开始前先确定字体来源（默认建议 Adafruit_GFX 的 FreeMonoBold9pt7b 直接照抄进项目）。
