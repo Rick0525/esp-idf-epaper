@@ -51,19 +51,15 @@ $PY $IDF -C $PROJ -p <port> flash
 - 顶层 CMakeLists：`cmake_minimum_required(VERSION 3.22)` + `idf_build_set_property(MINIMAL_BUILD ON)`
 - `components/<name>/` 会被自动发现，无需在顶层声明
 
-## 墨水屏（0154T8 兼容屏 / IL0373 / ESP32-PICO-KIT v4.1）
+## 墨水屏（本项目硬件配置）
 
-> 注：本项目早期误把控制器当成 SSD1681，按错命令集写了一版完全不工作的驱动。
-> 屏的真实控制器是 **IL0373**，规格是 1.54" 黑白单色 **0154T8**——这是行业通用规格代号
-> （8 pin、152×152、IL0373 控制器），不是某家专属型号。
->
-> **实物屏**：面板印 `WF0154T8PCZ17230H` / Brand: WEIFENG / WUXI VISION PEAK TECHNOLOGY，
-> 即无锡威峰科技产的 WeiFeng 牌 0154T8 兼容屏，与 Good Display 的 GDEW0154T8 是同协议
-> 规格不同品牌的兼容屏：命令集、152×152、全刷时序、BUSY 极性完全一致。我们沿用 Arduino
-> 工程 `GxEPD2_154_T8` 类（文件 `/Users/rick/Documents/Arduino/libraries/GxEPD2/src/epd/GxEPD2_154_T8.cpp`，
-> 顶部注释写明 `Controller: IL0373`）作 ground truth。后续做硬件移植**必须**先看现有可工作的原代码。
+**实物屏**：WeiFeng `WF0154T8PCZ17230H`（无锡威峰科技），1.54" 黑白单色、0154T8 行业兼容屏、控制器 IL0373、分辨率 152×152。屏体溯源详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md) 的"屏体溯源"段。
 
-### 硬件接线（固定，不要改）
+**驱动通用知识**（命令集、5 张 LUT、全刷/局部刷流程、BUSY 极性、复位时序、SPI 封装、踩坑速查、移植到其他 MCU）见 [`docs/EPAPER_IL0373_GUIDE.md`](docs/EPAPER_IL0373_GUIDE.md)——任何 IL0373 0154T8 屏项目都能直接拿走。
+
+本项目的 IL0373 驱动实现照搬 Arduino [GxEPD2](https://github.com/ZinggJM/GxEPD2) 库的 `GxEPD2_154_T8` 类（`/Users/rick/Documents/Arduino/libraries/GxEPD2/src/epd/GxEPD2_154_T8.cpp`，顶部注释写明 `Controller: IL0373`）作 ground truth。后续做任何硬件移植**必须**先看现有可工作的原代码——别凭型号假设。
+
+### 硬件接线（本项目固定，不要改）
 
 | 信号 | ESP32 GPIO | 说明 |
 |---|---|---|
@@ -76,53 +72,4 @@ $PY $IDF -C $PROJ -p <port> flash
 | VCC  | 3.3V | **禁止 5V** |
 | GND  | 共地 | |
 
-SPI host 用 `SPI3_HOST`（VSPI），CS/MOSI/SCK 正好是 IOMUX 引脚，速度最优。
-
-### 屏分辨率
-**152×152**（不是 200×200）。`EPD_W=EPD_H=152`，帧缓冲 152×152/8 = 2888 字节。
-
-### 复位时序
-按 Arduino GxEPD2 默认：RST 高 10ms → 低 10ms → 高 10ms（`GxEPD2_EPD::_reset`）。
-
-### BUSY 处理（**关键，注意极性！**）
-- IL0373：**BUSY=LOW 表示忙，BUSY=HIGH 表示空闲**（与 SSD1681 相反）
-- 等待屏空闲 = 等 `gpio_get_level(BUSY) == 1`
-- 命令发出后先 `vTaskDelay(1)` 再轮询，给屏一点时间真正进入 busy（参照 GxEPD2 `_waitWhileBusy`）
-- `wait_busy_idle` 必须带超时（默认 5s）+ `ESP_LOGE`，禁止死循环
-
-### IL0373 命令集（`il0373_cmd.h`）
-| 命令 | 作用 |
-|---|---|
-| `0x00` PANEL_SETTING | 含 LUT 来源（0xbf=register / 0x1f=OTP，本屏只能用 0xbf） |
-| `0x01` POWER_SETTING | 5 字节参数 |
-| `0x02` POWER_OFF | 跟 wait_busy |
-| `0x04` POWER_ON | 跟 wait_busy（约 60ms） |
-| `0x06` BOOSTER_SOFT_START | 3 字节 0x17 |
-| `0x07` DEEP_SLEEP | **必须**跟参数 0xA5 才生效，唤醒只能靠硬件 RST |
-| `0x10` DTM1 | 写 previous 帧（首次刷新需写全 0xFF） |
-| `0x12` DISPLAY_REFRESH | 触发刷新，无参数；约 1.6 秒 |
-| `0x13` DTM2 | 写当前帧 |
-| `0x20`-`0x24` | 5 张 LUT（vcomDC/ww/bw/wb/bb），必须手动下发，OTP 不可用 |
-| `0x30` PLL | 0x3a = 100Hz |
-| `0x50` VCOM_DATA_INTERVAL | 全刷用 0x97 |
-| `0x61` RESOLUTION | 3 字节：宽 8 位 + 高 16 位 |
-| `0x82` VCOM_DC | 0x08 |
-
-### 全刷流程（照搬 GxEPD2_154_T8）
-```
-hw_reset → InitDisplay (0x01/0x06/0x00/0x30/0x61)
-        → VCOM_DC + VCOM_DATA_INTERVAL
-        → 5 张 LUT (0x20-0x24)
-        → POWER_ON (0x04) + wait_busy
-        → DTM2 (0x13) + 帧缓冲
-        → 首次还要 DTM1 (0x10) + 全 0xFF 作为 previous 基线
-        → DISPLAY_REFRESH (0x12) + wait_busy(约 1.6s)
-hibernate: POWER_OFF (0x02) + wait_busy
-        → DEEP_SLEEP (0x07 0xA5)
-```
-
-### SPI 命令/数据封装
-- 命令：`gpio_set_level(DC, 0)` + 发 1 字节
-- 数据：`gpio_set_level(DC, 1)` + 发 N 字节
-- CS 交给 SPI 驱动（`spics_io_num=5`）；mode 0；4MHz（GxEPD2 默认）
-- 用 `spi_device_polling_transmit`，帧缓冲在 `.bss` 即可（无需 DMA-capable 内存）
+SPI host 用 `SPI3_HOST`（VSPI），CS/MOSI/SCK 正好是 IOMUX 引脚，速度最优。SPI mode 0、4MHz、硬件 CS、polling 模式（详见 [EPAPER_IL0373_GUIDE.md 第 5 节](docs/EPAPER_IL0373_GUIDE.md)）。
