@@ -1,6 +1,8 @@
 # eink_screen
 
-ESP32-PICO-KIT v4.1 + 1.54" GDEW0154T8 黑白墨水屏（IL0373 控制器）的 ESP-IDF v6.0.1 驱动与示例。
+ESP32-PICO-KIT v4.1 + 1.54" **0154T8 规格**黑白墨水屏（IL0373 控制器）的 ESP-IDF v6.0.1 驱动与示例。
+
+实物屏：WeiFeng（无锡威峰科技）`WF0154T8PCZ17230H`，与 Good Display `GDEW0154T8` 是同规格不同品牌的兼容屏（详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)）。
 
 从零手写的 C 驱动，不依赖第三方组件；初始化序列、5 张全刷 LUT、刷新流程**严格照搬** Arduino [GxEPD2](https://github.com/ZinggJM/GxEPD2) 库的 `GxEPD2_154_T8` 类。
 
@@ -133,6 +135,8 @@ eink_screen/
 
 ### 1. 屏完全无反应或灰底
 **90% 是控制器型号判断错了**。先去看 Arduino 工程里 GxEPD2 用的是哪个类（如 `GxEPD2_154_T8`），打开对应 `.cpp` 看顶部注释里写的真实控制器型号——本项目早期就是把 IL0373 错认成 SSD1681，按错命令集写了一版完全不工作的驱动。
+
+> 屏面板印的型号代号（如 `WF0154T8...`、`GDEW0154T8`）不等于控制器型号。`0154T8` 是行业规格代号（1.54"+IL0373），同代号的不同品牌屏协议互通；要查控制器看 GxEPD2 类对应 `.cpp` 顶部注释。
 
 ### 2. BUSY 一直为 0（IL0373 视角=屏一直忙）
 - POWER_ON (0x04) 失败

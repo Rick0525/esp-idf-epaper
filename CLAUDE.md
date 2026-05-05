@@ -51,12 +51,17 @@ $PY $IDF -C $PROJ -p <port> flash
 - 顶层 CMakeLists：`cmake_minimum_required(VERSION 3.22)` + `idf_build_set_property(MINIMAL_BUILD ON)`
 - `components/<name>/` 会被自动发现，无需在顶层声明
 
-## 墨水屏（GDEW0154T8 / IL0373 / ESP32-PICO-KIT v4.1）
+## 墨水屏（0154T8 兼容屏 / IL0373 / ESP32-PICO-KIT v4.1）
 
-> 注：本项目早期误把控制器当成 SSD1681，按错命令集写了一版完全不工作的驱动；
-> 屏的真实型号是 1.54" **GDEW0154T8**，控制器 **IL0373**（与 Arduino 工程
-> `GxEPD2_154_T8` 类一致，文件 `/Users/rick/Documents/Arduino/libraries/GxEPD2/src/epd/GxEPD2_154_T8.cpp`
-> 顶部注释直接写明 `Controller: IL0373`）。后续做硬件移植**必须**先看现有可工作的原代码。
+> 注：本项目早期误把控制器当成 SSD1681，按错命令集写了一版完全不工作的驱动。
+> 屏的真实控制器是 **IL0373**，规格是 1.54" 黑白单色 **0154T8**——这是行业通用规格代号
+> （8 pin、152×152、IL0373 控制器），不是某家专属型号。
+>
+> **实物屏**：面板印 `WF0154T8PCZ17230H` / Brand: WEIFENG / WUXI VISION PEAK TECHNOLOGY，
+> 即无锡威峰科技产的 WeiFeng 牌 0154T8 兼容屏，与 Good Display 的 GDEW0154T8 是同协议
+> 规格不同品牌的兼容屏：命令集、152×152、全刷时序、BUSY 极性完全一致。我们沿用 Arduino
+> 工程 `GxEPD2_154_T8` 类（文件 `/Users/rick/Documents/Arduino/libraries/GxEPD2/src/epd/GxEPD2_154_T8.cpp`，
+> 顶部注释写明 `Controller: IL0373`）作 ground truth。后续做硬件移植**必须**先看现有可工作的原代码。
 
 ### 硬件接线（固定，不要改）
 
