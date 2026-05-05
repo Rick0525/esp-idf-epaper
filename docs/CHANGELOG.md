@@ -101,3 +101,23 @@
 串口日志同前节点：DisplayRefresh ~1550ms、PowerOff、Deep Sleep。
 
 **关键经验**：嵌入第三方字体源文件时，先决定它在内存里的归属——`char xxx[][]=` 在头文件里被多次包含会产生多重定义/内存膨胀；改 `static const uint8_t` 一行就能让它走 .rodata、避免链接冲突、还多一层类型语义。这个改动属于"接入"而非"修改字体内容"，与公共域许可不冲突。
+
+## 节点 5 — README 与故障排查文档
+
+新增 `README.md`，作为项目对外入口，覆盖：
+- 项目定位（ESP-IDF v6.0.1 移植 + 严格照搬 GxEPD2_154_T8）
+- 硬件接线表 + 文本接线图（GPIO 5/23/18/27/33/14、3.3V、共地）
+- 默认 helloWorld 显示效果（含外圈白边的物理特性说明，链 `docs/HARDWARE_NOTES.md`）
+- 公开 API 速览（init/clear/draw_pixel/draw_hline/draw_string_8x8/display_full/sleep）
+- 编译烧录两种方式（交互式 `idf.py` 别名 + 自动化绝对路径模板）
+- 串口端口探测命令
+- 项目目录结构
+- **故障排查清单**（9 条，按概率从高到低）：型号误判、BUSY 卡 0、SPI mode/接线、显示错位、花屏/残影、字符位序、串口占用、v6.0 esp_log→log 重命名、v6.0 GPIO 不再隐式上拉
+- 关键参考链接（GxEPD2 源文件路径、IL0373 datasheet、GDEW0154T8 产品页、dhepper/font8x8）
+- 许可声明（代码 MIT、嵌入字体公共域）
+
+故障排查段直接复用并扩展了 `PLAN.md` 的"排查清单"，把节点 0-4 实际踩过的坑都收录了（型号纠正、BUSY 极性、152 vs 200、DTM1/DTM2 顺序、字体位序、esp_log→log）。
+
+CHANGELOG 自身在本节点的角色：节点 0-5 段落齐全，作为本次移植的完整流水账可交付。
+
+至此 PLAN.md 节点 0-5 全部落地：项目骨架 → SPI/GPIO 验证 → IL0373 全刷驱动 → 帧缓冲与诊断图样 → 字体与 helloWorld → 文档收尾。git 历史 5 个原子提交对应 5 个节点（节点 0/1/2/3/4 已提交，节点 5 即本提交）。
