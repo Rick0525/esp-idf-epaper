@@ -153,3 +153,41 @@ CHANGELOG 自身在本节点的角色：节点 0-5 段落齐全，作为本次�
 - **rect 边框宽度固定 1px**：与 GxEPD2 / Adafruit_GFX 行为一致；如未来需要粗边框可在调用层多调几次 `draw_rect(x±i, y±i, ...)` 凑出
 - **不实现 draw_line（任意方向）**：当前用例没有斜线需求，Bresenham 实现属于增量价值低、可后续按需补
 
+## 节点 7 — 旋转支持（rotation 0/1/2/3）
+
+代码改动：
+- `epaper_154.h`：新增 3 个 API
+  - `epaper_set_rotation(uint8_t rotation)` — 0=正向、1=顺时针 90°、2=180°、3=顺时针 270°
+  - `epaper_width()` / `epaper_height()` — 返回当前旋转下的逻辑尺寸（rotation 1/3 时为 EPD_H/EPD_W）
+- `epaper_154.c`：
+  - 新增静态状态 `s_rotation`，纯软件层坐标变换，不下发任何屏命令
+  - `epaper_draw_pixel`：边界用 `epaper_width()/height()`，再按 Adafruit_GFX 标准 4 个 case 把逻辑坐标映射到物理像素：
+    - case 1: `(px, py) = (EPD_W-1-y, x)`
+    - case 2: `(px, py) = (EPD_W-1-x, EPD_H-1-y)`
+    - case 3: `(px, py) = (y, EPD_H-1-x)`
+  - `draw_hline/vline/fill_rect` 的边界裁剪改用 `epaper_width()/height()`（原来用宏 EPD_W/H，旋转后会错）
+  - `draw_rect` 走 hline+vline 凑边，无需改
+  - `draw_string_8x8` 内部调 `draw_pixel`，自动跟随旋转
+- `main/main.c`：循环 `for (r=0..3) { set_rotation(r); 重画带方向标识的 demo; display_full; vTaskDelay(2s); }`，最后才 `epaper_sleep`
+
+旋转 demo 的方向标识：
+- 左上角文字 `rot N`（紧贴用户视角的左上）
+- 顶边一条实心 fill_rect 横条（标识"上方"）
+- 左侧 5 条等距 vline（标识"左方"）
+- 中央 "Hello, IDF!"
+- 左下角 "bottom" 文字
+
+对照 4 次刷新可清楚看到：每次刷新所有元素相对物理屏面整体顺时针旋转 90°——标签、横条、vline 跟着各自的"逻辑方位"绕屏一圈。
+
+验证：
+- build 通过；4 次 DisplayRefresh 各 ~1550ms，总耗时 ~14.6s
+- 注意串口里第 1 次 PowerOn ~50ms、后续 3 次 PowerOn ~0ms：因为屏没经过 PowerOff，重新下 0x04 时控制器立刻就绪，wait_busy_idle 第一次轮询前的 1ms tickdelay 后 BUSY 已经是高。这与 GxEPD2 的行为一致，不是 bug
+- 用户确认 4 个角度旋转方向都正确
+
+设计决策：
+- **旋转纯软件层实现**：不动屏命令（IL0373 也不存在 RAM 旋转命令），只在 `draw_pixel` 入口前转坐标。代价是每像素多一个 switch + 算术，量级几纳秒，相比 1.6s 全刷完全可忽略
+- **正方形屏的旋转价值**：152×152 旋转 logical width/height 没有数值变化，但内容方向真实变化——主要给 UI 适配设备物理朝向（如壁挂 vs 横放）用
+- **不在 IL0373 层做帧缓冲翻转**：理论上可以在写 DTM2 前把 framebuf 整片转置/翻转再发，但代码复杂度远高于 draw_pixel 入口变换，且失去"画到一半切 rotation"的灵活性。坚持走 GxEPD2/Adafruit_GFX 路线
+- **不实现 mirror**：GxEPD2 有 `_mirror` 字段处理镜像（一些屏物理上左右反），本屏不需要，省了
+
+

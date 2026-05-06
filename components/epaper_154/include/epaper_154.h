@@ -11,12 +11,22 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-// 屏幕分辨率（GDEW0154T8 实际为 152×152，对照 GxEPD2_154_T8::WIDTH/HEIGHT）
+// 屏幕物理分辨率（GDEW0154T8 实际为 152×152，对照 GxEPD2_154_T8::WIDTH/HEIGHT）
+// 注意：rotation 1/3 时逻辑宽高互换，请改用 epaper_width()/epaper_height()
 #define EPD_W 152
 #define EPD_H 152
 
 // 初始化：GPIO + SPI 总线 + 硬件复位。屏命令序列推迟到 epaper_display_full 内执行
 esp_err_t epaper_init(void);
+
+// 设置旋转方向：0=正向、1=顺时针 90°、2=180°、3=顺时针 270°
+// 影响所有 draw_* 的逻辑坐标系；clear/display_full/sleep 不受影响
+// 仅修改本地状态，不下发屏命令——旋转纯靠帧缓冲层坐标变换实现
+void epaper_set_rotation(uint8_t rotation);
+
+// 当前旋转下的逻辑宽/高（rotation 1/3 时为 EPD_H/EPD_W）
+int  epaper_width(void);
+int  epaper_height(void);
 
 // 用单一颜色填充帧缓冲。color=0xFF 全白，0x00 全黑
 void epaper_clear(uint8_t color);

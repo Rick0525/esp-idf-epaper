@@ -46,6 +46,8 @@ static uint8_t s_framebuf[EPD_FB_BYTES];
 static spi_device_handle_t s_spi = NULL;
 // 首次刷新需要把 previous frame buffer (0x10) 也填白，否则差分 LUT 会按未知基线刷新
 static bool s_initial_refresh = true;
+// 旋转：0/1/2/3，纯软件层坐标变换，不下发屏命令
+static uint8_t s_rotation = 0;
 
 // ---- 全刷 LUT，5 张表，直接复制自 GxEPD2_154_T8.cpp lut_20_vcomDC ~ lut_24_bb ----
 
@@ -283,11 +285,39 @@ void epaper_clear(uint8_t color)
     memset(s_framebuf, color, sizeof(s_framebuf));
 }
 
+void epaper_set_rotation(uint8_t rotation)
+{
+    s_rotation = rotation & 3;
+}
+
+int epaper_width(void)
+{
+    return (s_rotation & 1) ? EPD_H : EPD_W;
+}
+
+int epaper_height(void)
+{
+    return (s_rotation & 1) ? EPD_W : EPD_H;
+}
+
 void epaper_draw_pixel(int x, int y, bool black)
 {
-    if ((unsigned)x >= EPD_W || (unsigned)y >= EPD_H) return;
-    size_t idx = (size_t)(x >> 3) + (size_t)y * (EPD_W >> 3);
-    uint8_t bit = 0x80 >> (x & 7);    // MSB 对应较小 X
+    // 边界按当前旋转下的逻辑尺寸判断
+    if ((unsigned)x >= (unsigned)epaper_width() ||
+        (unsigned)y >= (unsigned)epaper_height()) return;
+
+    // 坐标变换到物理像素（与 Adafruit_GFX/GxEPD2 标准等价）
+    int px, py;
+    switch (s_rotation) {
+        default:
+        case 0: px = x;             py = y;             break;
+        case 1: px = EPD_W - 1 - y; py = x;             break;
+        case 2: px = EPD_W - 1 - x; py = EPD_H - 1 - y; break;
+        case 3: px = y;             py = EPD_H - 1 - x; break;
+    }
+
+    size_t idx = (size_t)(px >> 3) + (size_t)py * (EPD_W >> 3);
+    uint8_t bit = 0x80 >> (px & 7);    // MSB 对应较小物理 X
     if (black) {
         s_framebuf[idx] &= ~bit;       // 0 = 黑
     } else {
@@ -297,9 +327,10 @@ void epaper_draw_pixel(int x, int y, bool black)
 
 void epaper_draw_hline(int x, int y, int len, bool black)
 {
-    if (y < 0 || y >= EPD_H) return;
+    int W = epaper_width(), H = epaper_height();
+    if (y < 0 || y >= H) return;
     if (x < 0) { len += x; x = 0; }
-    if (x + len > EPD_W) len = EPD_W - x;
+    if (x + len > W) len = W - x;
     if (len <= 0) return;
     for (int i = 0; i < len; i++) {
         epaper_draw_pixel(x + i, y, black);
@@ -308,9 +339,10 @@ void epaper_draw_hline(int x, int y, int len, bool black)
 
 void epaper_draw_vline(int x, int y, int len, bool black)
 {
-    if (x < 0 || x >= EPD_W) return;
+    int W = epaper_width(), H = epaper_height();
+    if (x < 0 || x >= W) return;
     if (y < 0) { len += y; y = 0; }
-    if (y + len > EPD_H) len = EPD_H - y;
+    if (y + len > H) len = H - y;
     if (len <= 0) return;
     for (int i = 0; i < len; i++) {
         epaper_draw_pixel(x, y + i, black);
@@ -328,11 +360,12 @@ void epaper_draw_rect(int x, int y, int w, int h, bool black)
 
 void epaper_fill_rect(int x, int y, int w, int h, bool black)
 {
+    int W = epaper_width(), H = epaper_height();
     if (w <= 0 || h <= 0) return;
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
-    if (x + w > EPD_W) w = EPD_W - x;
-    if (y + h > EPD_H) h = EPD_H - y;
+    if (x + w > W) w = W - x;
+    if (y + h > H) h = H - y;
     if (w <= 0 || h <= 0) return;
     for (int row = 0; row < h; row++) {
         epaper_draw_hline(x, y + row, w, black);
