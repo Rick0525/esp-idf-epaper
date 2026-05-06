@@ -1,6 +1,6 @@
 // 1.54 寸 GDEW0154T8 单色墨水屏（IL0373 控制器）公开 API
 //
-// 硬件接线（ESP32-PICO-KIT v4.1，固定不变）：
+// 默认硬件接线（在 epaper_154.c 顶部以宏定义，可改）：
 //   CS  = GPIO5    MOSI = GPIO23   SCK = GPIO18   MISO 不接
 //   DC  = GPIO27   RST  = GPIO33   BUSY = GPIO14
 //   VCC = 3.3V，共地

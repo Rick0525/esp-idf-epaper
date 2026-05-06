@@ -1,4 +1,4 @@
-// FreeSansBold9pt7b — 节点 9 默认字体
+// FreeSansBold9pt7b — GFX 比例字体（默认示例字）
 //
 // 数据来源：Adafruit-GFX-Library/Fonts/FreeSansBold9pt7b.h
 // 该字体文件由 fontconvert 工具从 GNU FreeFont 项目的 FreeSansBold.ttf 生成，

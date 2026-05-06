@@ -4,7 +4,7 @@ ESP32-PICO-KIT v4.1 + 1.54" **0154T8 规格**黑白墨水屏（IL0373 控制器�
 
 设计目标：做一个在 ESP-IDF 下**好复用的基础驱动库**，组件目录 `components/epaper_154/` 可整体拷到任何 IDF 项目即用。视觉层不绑定 Arduino——`GxEPD2` 仅作为**实现层 ground truth**（init 序列、5 张 LUT、partial 流程严格照搬），上层 API 形态、字体选型、demo 风格自主决定。
 
-实物屏：WeiFeng（无锡威峰科技）`WF0154T8PCZ17230H`，与 Good Display `GDEW0154T8` 是同规格不同品牌的兼容屏（详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)）。
+已验证屏体：WeiFeng `WF0154T8PCZ17230H`，与 Good Display `GDEW0154T8` 是同规格不同品牌的兼容屏（详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)）。
 
 ## 库能力一览
 
@@ -171,7 +171,7 @@ epaper_draw_bitmap(50, 10, my_icon, 16, 16, true);  // 同数据贴第二份
 epaper_set_rotation(1);                       // 顺 90°
 // 此后所有 draw_* 用旋转后的逻辑坐标系
 // epaper_width()/height() 自动交换（正方形屏数值不变）
-epaper_draw_string_8x8(0, 0, "TOP-LEFT", true);   // 用户视角的左上
+epaper_draw_string_8x8(0, 0, "TOP-LEFT", true);   // 显示后的左上角
 ```
 
 ## 添加自己的字体
@@ -221,16 +221,21 @@ idf.py build
 idf.py -p /dev/cu.usbserial-XXX flash monitor
 ```
 
-### 自动化脚本（绝对路径，避免别名展开问题）
+### 自动化脚本（CI / shell 别名不可用时）
+
+`idf.py` 是激活脚本注入的 shell 别名，在 `&&` 链或非交互 shell 里不会展开。
+此时改用 IDF 安装目录里的 Python venv + `tools/idf.py` 绝对路径调用：
 
 ```sh
-PY=/Users/rick/.espressif/tools/python/v6.0.1/venv/bin/python
-IDF=/Users/rick/.espressif/v6.0.1/esp-idf/tools/idf.py
-PROJ=/Users/rick/Documents/ESP32Projects/eink_screen
+PY=$IDF_PYTHON_ENV_PATH/bin/python
+IDF_PY=$IDF_PATH/tools/idf.py
+PROJ=$(pwd)
 
-$PY $IDF -C $PROJ build
-$PY $IDF -C $PROJ -p /dev/cu.usbserial-110 flash
+$PY $IDF_PY -C $PROJ build
+$PY $IDF_PY -C $PROJ -p /dev/cu.usbserial-XXX flash
 ```
+
+`$IDF_PYTHON_ENV_PATH` 与 `$IDF_PATH` 由激活脚本自动设置。
 
 ### 串口端口探测
 
@@ -274,9 +279,9 @@ eink_screen/
 按现象出现的概率从高到低：
 
 ### 1. 屏完全无反应或灰底
-**90% 是控制器型号判断错了**。先去看 Arduino 工程里 GxEPD2 用的是哪个类（如 `GxEPD2_154_T8`），打开对应 `.cpp` 看顶部注释里写的真实控制器型号——本项目早期就是把 IL0373 错认成 SSD1681，按错命令集写了一版完全不工作的驱动。
+**90% 是控制器型号判断错了**。先去看 Arduino GxEPD2 库里对应屏型号的 `.cpp`（如 `GxEPD2_154_T8.cpp`）顶部注释，确认真实控制器是什么。IL0373、SSD1681、UC8151D 等命令集互不通用，型号错则整套时序、LUT、刷新流程都对不上。
 
-> 屏面板印的型号代号（如 `WF0154T8...`、`GDEW0154T8`）不等于控制器型号。`0154T8` 是行业规格代号（1.54"+IL0373），同代号的不同品牌屏协议互通；要查控制器看 GxEPD2 类对应 `.cpp` 顶部注释。
+> 屏面板印的代号（如 `WF0154T8...`、`GDEW0154T8`）是规格代号不是控制器型号。`0154T8` = 1.54" + IL0373，同代号的不同品牌屏协议互通。控制器只能查 GxEPD2 类对应 `.cpp` 的顶部注释或屏厂家 datasheet。
 
 ### 2. BUSY 一直为 0（IL0373 视角=屏一直忙）
 - POWER_ON (0x04) 失败
@@ -325,12 +330,12 @@ v6.0 起 GPIO 驱动不再隐式上拉。`gpio_config_t.pull_up_en` / `pull_down
 
 ## 关键参考
 
-- Arduino 原工程：`/Users/rick/Documents/Arduino/libraries/GxEPD2/src/epd/GxEPD2_154_T8.{h,cpp}`（实现层 ground truth，移植任何变更必先对照）
+- Arduino GxEPD2 库 `GxEPD2_154_T8.{h,cpp}`：[github.com/ZinggJM/GxEPD2](https://github.com/ZinggJM/GxEPD2)（实现层 ground truth，移植任何变更建议先对照）
 - IL0373 datasheet：[http://www.e-paper-display.com/download_detail/downloadsId=535.html](http://www.e-paper-display.com/download_detail/downloadsId=535.html)
 - GDEW0154T8 产品页：[http://www.e-paper-display.com/products_detail/productId=345.html](http://www.e-paper-display.com/products_detail/productId=345.html)
 - 8×8 字体：[github.com/dhepper/font8x8](https://github.com/dhepper/font8x8)（公共域）
 - GFX 字体格式 + FreeSans：[github.com/adafruit/Adafruit-GFX-Library](https://github.com/adafruit/Adafruit-GFX-Library)（BSD 3-clause）
-- IL0373 通用移植笔记：[`docs/EPAPER_IL0373_GUIDE.md`](docs/EPAPER_IL0373_GUIDE.md)（任何 0154T8 屏项目可直接拿走）
+- IL0373 通用移植笔记：[`docs/EPAPER_IL0373_GUIDE.md`](docs/EPAPER_IL0373_GUIDE.md)（任何 0154T8 屏项目可直接参考）
 
 ## 许可
 

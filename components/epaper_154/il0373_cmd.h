@@ -1,12 +1,5 @@
 // IL0373 控制器命令字节宏（GDEW0154T8 1.54 寸黑白墨水屏）
-//
-// 命令字节直接对照 Arduino GxEPD2 库 GxEPD2_154_T8.cpp 的实现
-// （/Users/rick/Documents/Arduino/libraries/GxEPD2/src/epd/GxEPD2_154_T8.cpp）
-//
-// 注意 IL0373 与 SSD1681 命令集不通用：
-//   - SSD1681: 0x12=SW Reset, 0x24=write BW RAM, 0x22+0x20=update, 0x10=deep sleep
-//   - IL0373:  0x12=display refresh, 0x10/0x13=write RAM, 0x07 0xA5=deep sleep
-// 之前误以为是 SSD1681 写了一版完全不工作的驱动，已废弃。
+// 数值参照 Arduino GxEPD2 库 GxEPD2_154_T8.cpp。
 
 #pragma once
 

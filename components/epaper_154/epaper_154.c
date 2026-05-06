@@ -1,14 +1,13 @@
 // 1.54 寸 GDEW0154T8 单色墨水屏（IL0373 控制器）驱动实现
+// init 序列、5 张全刷 / partial LUT、刷新流程参照 Arduino GxEPD2 库
+// GxEPD2_154_T8（https://github.com/ZinggJM/GxEPD2）。
 //
-// 完全照搬 Arduino GxEPD2 库 GxEPD2_154_T8 的 init 序列、LUT 数据、
-// 刷新流程到 ESP-IDF C 代码。源码参照：
-//   /Users/rick/Documents/Arduino/libraries/GxEPD2/src/epd/GxEPD2_154_T8.cpp
-//
-// 关键差异（相对此前误以为的 SSD1681 实现）：
-//   - BUSY 极性反转：IL0373 BUSY=LOW 表示忙、BUSY=HIGH 表示空闲
-//   - 命令集完全不同：写 RAM 用 0x10/0x13，刷新用 0x12，深睡用 0x07 0xA5
-//   - 必须手动下发 5 张 LUT（vcomDC/ww/bw/wb/bb），OTP 在该屏上不可用
-//   - 屏分辨率为 152×152（不是 200×200）
+// 关键参数：
+//   - 分辨率 152×152
+//   - BUSY 极性：LOW=忙、HIGH=空闲
+//   - 写 RAM：0x10（previous）/ 0x13（current），刷新：0x12
+//   - 深睡：0x07 0xA5（再次唤醒只能硬件复位）
+//   - PANEL_SETTING 必须 LUT-from-register（0xbf），该屏 OTP 不可用
 
 #include "epaper_154.h"
 #include "font8x8_basic.h"
@@ -25,7 +24,7 @@
 
 static const char *TAG = "EPD";
 
-// ---- 引脚定义（用户接线，固定不变） ----
+// ---- 引脚定义（与 README 接线表对应） ----
 #define EPD_PIN_CS   5
 #define EPD_PIN_MOSI 23
 #define EPD_PIN_SCK  18
@@ -36,7 +35,7 @@ static const char *TAG = "EPD";
 #define EPD_SPI_HOST   SPI3_HOST
 #define EPD_SPI_CLK_HZ (4 * 1000 * 1000)   // GxEPD2 默认 4MHz
 
-// IL0373 BUSY 极性：LOW=忙，HIGH=空闲（与 SSD1681 相反！）
+// IL0373 BUSY 极性：LOW=忙、HIGH=空闲
 #define EPD_BUSY_TIMEOUT_MS 5000
 
 // 帧缓冲：每字节 8 个像素（MSB 对应较小 X）。1=白 0=黑
