@@ -236,7 +236,7 @@ static esp_err_t il0373_init_display(void)
         if ((err = cmd_data(IL0373_BOOSTER_SOFT_START, p, sizeof(p))) != ESP_OK) return err;
     }
     // 0x00 PANEL SETTING
-    //   0xbf = LUT from register（OTP 在该屏上不可用，必须用 register LUT）
+    //   0xbf = LUT from register（默认；OTP 路径 0x1f 实测也能用但全刷慢 ~3×）
     //   0x0d = VCOM to 0V fast
     {
         const uint8_t p[2] = { 0xbf, 0x0d };
