@@ -254,8 +254,6 @@ eink_screen/
 ├── CMakeLists.txt                     # 顶层 project(eink_screen)
 ├── sdkconfig.defaults                 # CONFIG_IDF_TARGET=esp32 等
 ├── docs/
-│   ├── PLAN.md                        # 移植计划与节点表
-│   ├── CHANGELOG.md                   # 每个原子提交的功能记录
 │   ├── HARDWARE_NOTES.md              # 硬件特性研究笔记 + 字体方案选型
 │   └── EPAPER_IL0373_GUIDE.md         # IL0373 通用驱动笔记（任何 0154T8 屏可参考）
 ├── main/
