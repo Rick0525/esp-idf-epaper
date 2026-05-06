@@ -231,5 +231,40 @@ CHANGELOG 自身在本节点的角色：节点 0-5 段落齐全，作为本次�
 
 **关键经验**：partial 的双写是 IL0373 系列的硬要求（GxEPD2 在 drawImage 而非 refresh 内做了双写）。如果只在 API 内单写 + refresh，肉眼第一次看不出问题，但连续 partial 几次就会看到上一次的残影叠加。这种"对了一半"的 bug 比完全错更难定位——必须照搬 ground truth 的完整流程，不能省略看似冗余的步骤
 
+## 节点 9 — GFX 字体渲染器 + 默认字体
+
+代码改动：
+- `components/epaper_154/include/gfxfont.h`（新增）：从 Adafruit-GFX-Library 1:1 复制 `GFXglyph/GFXfont` 结构定义，保留 BSD 3-clause 版权头；加 `#define PROGMEM` 空宏让原版字体 `.h` 不必修改 `PROGMEM` 关键字
+- `components/epaper_154/fonts/FreeSansBold9pt7b.h`（新增）：从 Adafruit-GFX-Library 复制，仅改第二行 `#include <Adafruit_GFX.h>` → `#include "gfxfont.h"`，字体本体数据原封不动；加注释说明数据来源 + BSD 头位置
+- `components/epaper_154/CMakeLists.txt`：`INCLUDE_DIRS` 增加 `"fonts"`，让上层用户 `#include "FreeSansBold9pt7b.h"` 即可（无需相对路径）
+- `epaper_154.h`：新增 `#include "gfxfont.h"`、两个 API
+  - `epaper_draw_string_gfx(x, y, s, font, black)` — (x,y) 是**baseline**坐标
+  - `epaper_get_text_bounds_gfx(s, font, &w, &h)` — 算字符串渲染包围盒（居中对齐用）
+- `epaper_154.c`：新增 GFX 渲染逻辑
+  - `draw_char_gfx`：按 `GFXglyph` 元数据从 `bitmap[]` bit-stream 取像素，MSB 在左（与帧缓冲一致，比 8×8 字体的 LSB-first 顺）
+  - `epaper_draw_string_gfx`：循环字符 + 每字符 `xAdvance` 推进；`'\n'` 换行 cursor x 回归、y += `font->yAdvance`；超出 `[first, last]` 范围的字符跳过但保留 `glyph[0].xAdvance` 间距
+  - `epaper_get_text_bounds_gfx`：累加 `xAdvance`，h 取 `yAdvance`
+- `main/main.c`：节点 9 演示——上半屏 8×8 字体对照、下半屏 FreeSansBold9pt7b 三种用法（普通显示 / `get_text_bounds` 居中 / `'\n'` 多行）
+
+**视觉评估与字体选型迭代**：
+- 第一版用 FreeSansBold9pt7b 作为默认字。验收时用户反映"拐角锯齿感很强"——这是 1bit 输出在小字号下的固有现象（FreeSans 是矢量字体经 fontconvert 栅格化，9pt ≈ 13px 高，圆角和斜线像素不够 → 楼梯化）
+- 临时增加 FreeMonoBold9pt7b（直角等宽风）做同屏对比验证
+- 用户对比后决定**保留 FreeSansBold9pt7b 作为基础库默认字**——FreeMono 拿掉，fonts/ 仅留 FreeSansBold9pt7b 一个示例字
+- 后续应用层若想换字体，只需把 Adafruit_GFX 仓库任意 `.h` 复制进 `fonts/`、改第二行 include 即可，库代码无需任何修改
+
+设计决策：
+- **(x, y) 取 baseline**：与 Adafruit_GFX 一致；`GFXglyph::yOffset` 是相对 baseline 的偏移（通常负数），不做转换最直接。代价是上层定位字符串"上沿"时需要 `y_baseline = y_top + yAdvance - 5` 之类的换算，不直观但能避免双重坐标系
+- **`'\n'` 由渲染器处理**：cursor x 回归到入参 x（不是回归到 0），与"段落"语义一致
+- **超出范围字符保留间距**：用 `glyph[0].xAdvance` 兜底，避免奇怪字符让后续字符贴在一起
+- **PROGMEM 空宏接收原版字体**：让 fonts/ 里的 .h 与 Adafruit_GFX 仓库逐字节一致（仅 include 行不同），未来更新字体只需重抓 + 改一行；如果要把 PROGMEM 真当 Flash 段语义实现就要改 IDF link script，得不偿失
+- **不实现 `epaper_set_font` 全局状态**：每次调用显式传 `const GFXfont *`，避免隐式状态，便于多字体混排
+- **不做 GFX 字体自动换行（word wrap）**：是 UI 策略不是字体渲染职责；上层自己用 `get_text_bounds_gfx` 算宽度后切分
+
+**关键经验**：1bit 小屏字体选型不能只看"字体本身好看"——要看**栅格化后**在 13-16px 高度下的样子。FreeSans 矢量字体在屏幕上是"小尺寸 fontconvert 出来"的产物，与原 TTF 美感无关。下次做"更好看的小字号字体"应转向：
+- 专为 1bit 设计的位图字体（U8g2 helvB10 / inb 系列、Topaz 风格点阵字）
+- 或用更大字号（12pt/18pt）让锯齿相对像素总数变小
+本次保留 FreeSans 是用户在对比 FreeMono 后的明确选择，作为基础库的"占位默认字"——上层项目要更好的视觉应自己换字
+
+
 
 

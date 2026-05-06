@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "gfxfont.h"
 
 // 屏幕物理分辨率（GDEW0154T8 实际为 152×152，对照 GxEPD2_154_T8::WIDTH/HEIGHT）
 // 注意：rotation 1/3 时逻辑宽高互换，请改用 epaper_width()/epaper_height()
@@ -49,6 +50,19 @@ void epaper_fill_rect(int x, int y, int w, int h, bool black);
 // 用 8×8 单色字体在帧缓冲上画字符串（左上角 (x,y)，每字符占 8 像素宽）
 // 仅渲染 ASCII 0-127；遇到不在范围的字符或 NUL 终止
 void epaper_draw_string_8x8(int x, int y, const char *s, bool black);
+
+// 用 Adafruit_GFX 比例字体在帧缓冲上画字符串
+//   - (x, y) 是**基线坐标**（baseline），即字母 "A" 底端的 y；"j/g/p/q" 等下伸字符
+//     会延伸到 y 之下。需要按"字符串左上角"定位，传 y = top + font->yAdvance - 4 之类
+//   - '\n' 换行，cursor x 回到入参 x、y 增加 font->yAdvance
+//   - 字符不在 [font->first, font->last] 范围内则跳过该字符位置
+//   - 字体 .h 文件放 components/epaper_154/fonts/，#include "FreeSansBold9pt7b.h" 等
+void epaper_draw_string_gfx(int x, int y, const char *s, const GFXfont *font, bool black);
+
+// 计算字符串在 GFX 字体下的渲染包围盒（用于居中对齐等）
+//   - 返回 *out_w / *out_h（如非 NULL）
+//   - 不考虑 '\n' 换行（多行调用方自己分行算）
+void epaper_get_text_bounds_gfx(const char *s, const GFXfont *font, int *out_w, int *out_h);
 
 // 把帧缓冲写入显存并触发一次全刷新（约 1.6 秒，等 BUSY 拉到空闲后返回）
 // 内部含完整 IL0373 init 序列、5 张 LUT 下发、Power On

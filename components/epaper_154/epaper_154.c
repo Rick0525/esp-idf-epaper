@@ -495,6 +495,85 @@ void epaper_draw_string_8x8(int x, int y, const char *s, bool black)
     }
 }
 
+// ---- GFX 字体渲染（Adafruit_GFX 兼容格式） ----
+//
+// 字体数据：bitmap[] 是连续 bit stream，glyph[c-first] 给出该字符的元数据：
+//   - bitmapOffset：bitmap 中的字节偏移（按 bit 流读 width*height 个 bit）
+//   - width / height：glyph 像素尺寸（不含字符间距）
+//   - xOffset / yOffset：从光标 (x, baseline) 到 glyph 左上的偏移（通常 yOffset 负）
+//   - xAdvance：写完后光标 x 推进多少
+// bit 顺序 MSB 先（与帧缓冲一致），按 height 行 × width 列 raster scan
+
+static void draw_char_gfx(int x_baseline, int y_baseline, char c,
+                          const GFXfont *font, bool black)
+{
+    if ((uint8_t)c < font->first || (uint8_t)c > font->last) return;
+    const GFXglyph *g = &font->glyph[(uint8_t)c - font->first];
+    const uint8_t  *bitmap = font->bitmap;
+
+    uint16_t bo = g->bitmapOffset;
+    uint8_t  bits = 0, bit = 0;
+
+    int gx = x_baseline + g->xOffset;
+    int gy = y_baseline + g->yOffset;
+
+    for (int yy = 0; yy < g->height; yy++) {
+        for (int xx = 0; xx < g->width; xx++) {
+            if ((bit++ & 7) == 0) {
+                bits = bitmap[bo++];
+            }
+            if (bits & 0x80) {
+                epaper_draw_pixel(gx + xx, gy + yy, black);
+            }
+            bits <<= 1;
+        }
+    }
+}
+
+void epaper_draw_string_gfx(int x, int y, const char *s, const GFXfont *font, bool black)
+{
+    if (s == NULL || font == NULL) return;
+    int cx = x;
+    int cy = y;
+    while (*s) {
+        char ch = *s++;
+        if (ch == '\n') {
+            cx = x;
+            cy += font->yAdvance;
+            continue;
+        }
+        if ((uint8_t)ch < font->first || (uint8_t)ch > font->last) {
+            // 跳过不支持的字符，但保留它的间距（用 first 字符的 xAdvance 兜底）
+            cx += font->glyph[0].xAdvance;
+            continue;
+        }
+        draw_char_gfx(cx, cy, ch, font, black);
+        cx += font->glyph[(uint8_t)ch - font->first].xAdvance;
+    }
+}
+
+void epaper_get_text_bounds_gfx(const char *s, const GFXfont *font, int *out_w, int *out_h)
+{
+    if (s == NULL || font == NULL) {
+        if (out_w) *out_w = 0;
+        if (out_h) *out_h = 0;
+        return;
+    }
+    int total_w = 0;
+    while (*s) {
+        char ch = *s++;
+        if (ch == '\n') continue;
+        if ((uint8_t)ch < font->first || (uint8_t)ch > font->last) {
+            total_w += font->glyph[0].xAdvance;
+            continue;
+        }
+        total_w += font->glyph[(uint8_t)ch - font->first].xAdvance;
+    }
+    // 字体高度近似 = yAdvance；上层用 baseline + yAdvance 定位时这是对的近似
+    if (out_w) *out_w = total_w;
+    if (out_h) *out_h = font->yAdvance;
+}
+
 esp_err_t epaper_display_full(void)
 {
     esp_err_t err;
