@@ -306,6 +306,39 @@ void epaper_draw_hline(int x, int y, int len, bool black)
     }
 }
 
+void epaper_draw_vline(int x, int y, int len, bool black)
+{
+    if (x < 0 || x >= EPD_W) return;
+    if (y < 0) { len += y; y = 0; }
+    if (y + len > EPD_H) len = EPD_H - y;
+    if (len <= 0) return;
+    for (int i = 0; i < len; i++) {
+        epaper_draw_pixel(x, y + i, black);
+    }
+}
+
+void epaper_draw_rect(int x, int y, int w, int h, bool black)
+{
+    if (w <= 0 || h <= 0) return;
+    epaper_draw_hline(x,         y,         w, black);
+    epaper_draw_hline(x,         y + h - 1, w, black);
+    epaper_draw_vline(x,         y,         h, black);
+    epaper_draw_vline(x + w - 1, y,         h, black);
+}
+
+void epaper_fill_rect(int x, int y, int w, int h, bool black)
+{
+    if (w <= 0 || h <= 0) return;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > EPD_W) w = EPD_W - x;
+    if (y + h > EPD_H) h = EPD_H - y;
+    if (w <= 0 || h <= 0) return;
+    for (int row = 0; row < h; row++) {
+        epaper_draw_hline(x, y + row, w, black);
+    }
+}
+
 void epaper_draw_string_8x8(int x, int y, const char *s, bool black)
 {
     if (s == NULL) return;

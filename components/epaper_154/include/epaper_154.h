@@ -27,6 +27,15 @@ void epaper_draw_pixel(int x, int y, bool black);
 // 在帧缓冲上画水平线（从 (x,y) 起向右 len 像素）。越界部分自动裁剪
 void epaper_draw_hline(int x, int y, int len, bool black);
 
+// 在帧缓冲上画垂直线（从 (x,y) 起向下 len 像素）。越界部分自动裁剪
+void epaper_draw_vline(int x, int y, int len, bool black);
+
+// 矩形边框（左上角 (x,y)、宽 w、高 h）。越界部分自动裁剪；w/h<=0 静默忽略
+void epaper_draw_rect(int x, int y, int w, int h, bool black);
+
+// 填充矩形（左上角 (x,y)、宽 w、高 h）。越界部分自动裁剪；w/h<=0 静默忽略
+void epaper_fill_rect(int x, int y, int w, int h, bool black);
+
 // 用 8×8 单色字体在帧缓冲上画字符串（左上角 (x,y)，每字符占 8 像素宽）
 // 仅渲染 ASCII 0-127；遇到不在范围的字符或 NUL 终止
 void epaper_draw_string_8x8(int x, int y, const char *s, bool black);

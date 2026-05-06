@@ -121,3 +121,35 @@
 CHANGELOG 自身在本节点的角色：节点 0-5 段落齐全，作为本次移植的完整流水账可交付。
 
 至此 PLAN.md 节点 0-5 全部落地：项目骨架 → SPI/GPIO 验证 → IL0373 全刷驱动 → 帧缓冲与诊断图样 → 字体与 helloWorld → 文档收尾。git 历史 5 个原子提交对应 5 个节点（节点 0/1/2/3/4 已提交，节点 5 即本提交）。
+
+## 节点 6 — 图形基元扩展（vline / rect / fill_rect）
+
+主线移植结束后从 PLAN「后续节点候选」选最高价值/最低工作量项落地。
+
+代码改动：
+- `epaper_154.h`：新增三个 API
+  - `epaper_draw_vline(int x, int y, int len, bool black)`
+  - `epaper_draw_rect(int x, int y, int w, int h, bool black)` — 矩形边框（仅 4 条边）
+  - `epaper_fill_rect(int x, int y, int w, int h, bool black)` — 实心填充矩形
+- `epaper_154.c`：实现三个函数。设计要点：
+  - `draw_vline`：与 `draw_hline` 对称，越界静默裁剪
+  - `draw_rect`：复用两次 hline + 两次 vline 凑 4 条边，避免重复实现裁剪
+  - `fill_rect`：先做整体裁剪再逐行 hline；考虑过按字节优化（同行连续字节直接 memset）但 152×152 像素量级下肉眼不可感知，遵循"必要才优化"原则保持简单。每像素 0.x μs 量级，相比 1.6s 全刷无关紧要
+- `main/main.c`：换成图形基元演示
+  - 整屏 `draw_rect(0,0,152,152)` 验证可视区边界紧贴
+  - 顶部标题 "Node 6: Shapes" + 分隔 hline
+  - 中段三个 40×28 矩形横排：边框 / 填充 / 三层同心
+  - "vlines:" 标签下 5 条等距 vline（间距 16px，长 30px）
+  - 底部 fill_rect 横条（左右各留 8px）
+  - "shapes ok" 收尾文字
+
+验证：
+- build 通过；flash 后串口日志同前节点（PowerOn 40ms、DisplayRefresh ~1550ms、PowerOff 30ms、Deep Sleep）
+- 屏上肉眼确认全部 5 类图元位置正确：外框紧贴 152×152 边、三种矩形排布对称、vlines 等距、底部横条、文字清晰
+- 用户确认"符合预期"，节点 6 验收通过
+
+设计决策记录：
+- **fill_rect 暂不按字节优化**：原 PLAN 提到"可走按字节优化"，实测 152×152 全屏 fill 仅占数百微秒，远小于 1.6s 全刷与 SPI 写帧时间，按字节优化的代码复杂度（首尾边界 mask、中段 memset）不值
+- **rect 边框宽度固定 1px**：与 GxEPD2 / Adafruit_GFX 行为一致；如未来需要粗边框可在调用层多调几次 `draw_rect(x±i, y±i, ...)` 凑出
+- **不实现 draw_line（任意方向）**：当前用例没有斜线需求，Bresenham 实现属于增量价值低、可后续按需补
+
