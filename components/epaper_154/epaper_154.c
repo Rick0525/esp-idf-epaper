@@ -48,6 +48,8 @@ static spi_device_handle_t s_spi = NULL;
 static bool s_initial_refresh = true;
 // 旋转：0/1/2/3，纯软件层坐标变换，不下发屏命令
 static uint8_t s_rotation = 0;
+// 当前是否处于 partial 模式（VCOM 间隔 + LUT 与 full 不同，切换才需重发 init）
+static bool s_using_partial_mode = false;
 
 // ---- 全刷 LUT，5 张表，直接复制自 GxEPD2_154_T8.cpp lut_20_vcomDC ~ lut_24_bb ----
 
@@ -97,6 +99,63 @@ static const uint8_t s_lut_bb[] = {
     0x90, 0x28, 0x28, 0x00, 0x00, 0x01,
     0x80, 0x14, 0x00, 0x00, 0x00, 0x01,
     0x50, 0x12, 0x12, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+// ---- partial LUT，5 张表，直接复制自 GxEPD2_154_T8.cpp lut_*_partial ----
+// 关键点：第一行 phase length = Tx19 = 0x20（GxEPD2 注释说原值 0x19=25 太短，0x20=32 更稳）
+//        其它 6 行全 0，单步刷新，耗时 ~350ms
+
+#define EPD_PARTIAL_TX19  0x20
+
+static const uint8_t s_lut_vcomDC_partial[] = {
+    0x00, EPD_PARTIAL_TX19, 0x01, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00,
+};
+
+static const uint8_t s_lut_ww_partial[] = {
+    0x00, EPD_PARTIAL_TX19, 0x01, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t s_lut_bw_partial[] = {
+    0x80, EPD_PARTIAL_TX19, 0x01, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t s_lut_wb_partial[] = {
+    0x40, EPD_PARTIAL_TX19, 0x01, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t s_lut_bb_partial[] = {
+    0x00, EPD_PARTIAL_TX19, 0x01, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -217,7 +276,49 @@ static esp_err_t il0373_init_full(void)
     // 0x04 Power On + 等 BUSY 空闲（典型 ~60ms）
     if ((err = send_cmd(IL0373_POWER_ON)) != ESP_OK) return err;
     if ((err = wait_busy_idle(EPD_BUSY_TIMEOUT_MS, "PowerOn")) != ESP_OK) return err;
+    s_using_partial_mode = false;
     return ESP_OK;
+}
+
+// partial init（_InitDisplay + VCOM_DC + 0x17 间隔 + 5 张 partial LUT + Power On）
+// 与 init_full 仅两处不同：
+//   - VCOM_DATA_INTERVAL 从 0x97 → 0x17（VBDF 17/D7 vs 全刷 VBDW 97）
+//   - LUT 用 partial 系列（phase length 0x20 单步）
+static esp_err_t il0373_init_partial(void)
+{
+    esp_err_t err;
+    if ((err = il0373_init_display()) != ESP_OK) return err;
+
+    if ((err = cmd_p1(IL0373_VCOM_DC, 0x08)) != ESP_OK) return err;
+    if ((err = cmd_p1(IL0373_VCOM_DATA_INTERVAL, 0x17)) != ESP_OK) return err;
+
+    if ((err = cmd_data(IL0373_LUT_VCOM, s_lut_vcomDC_partial, sizeof(s_lut_vcomDC_partial))) != ESP_OK) return err;
+    if ((err = cmd_data(IL0373_LUT_WW,   s_lut_ww_partial,     sizeof(s_lut_ww_partial)))     != ESP_OK) return err;
+    if ((err = cmd_data(IL0373_LUT_BW,   s_lut_bw_partial,     sizeof(s_lut_bw_partial)))     != ESP_OK) return err;
+    if ((err = cmd_data(IL0373_LUT_WB,   s_lut_wb_partial,     sizeof(s_lut_wb_partial)))     != ESP_OK) return err;
+    if ((err = cmd_data(IL0373_LUT_BB,   s_lut_bb_partial,     sizeof(s_lut_bb_partial)))     != ESP_OK) return err;
+
+    if ((err = send_cmd(IL0373_POWER_ON)) != ESP_OK) return err;
+    if ((err = wait_busy_idle(EPD_BUSY_TIMEOUT_MS, "PowerOn(P)")) != ESP_OK) return err;
+    s_using_partial_mode = true;
+    return ESP_OK;
+}
+
+// 0x90 PARTIAL_WINDOW，发 7 字节：x_lo, xe_lo, y_hi, y_lo, ye_hi, ye_lo, 0x01
+// 注意：本屏宽 152 < 256，x 用单字节足够（与 GxEPD2 _setPartialRamArea 一致）
+// 调用前 x、w 必须已经 8 对齐（8 bit/byte 寻址）
+static esp_err_t il0373_set_partial_window(int x, int y, int w, int h)
+{
+    int xe = (x + w - 1) | 0x07;   // x_end 包到所在字节末尾
+    int ye = y + h - 1;
+    const uint8_t p[7] = {
+        (uint8_t)(x  & 0xFF),
+        (uint8_t)(xe & 0xFF),
+        (uint8_t)((y  >> 8) & 0xFF), (uint8_t)(y  & 0xFF),
+        (uint8_t)((ye >> 8) & 0xFF), (uint8_t)(ye & 0xFF),
+        0x01,
+    };
+    return cmd_data(IL0373_PARTIAL_WINDOW, p, sizeof(p));
 }
 
 esp_err_t epaper_init(void)
@@ -276,6 +377,7 @@ esp_err_t epaper_init(void)
              gpio_get_level(EPD_PIN_BUSY));
 
     s_initial_refresh = true;
+    s_using_partial_mode = false;   // hw_reset 之后控制器内部状态全清
     ESP_LOGI(TAG, "epaper_init 完成");
     return ESP_OK;
 }
@@ -436,6 +538,75 @@ esp_err_t epaper_display_full(void)
     return ESP_OK;
 }
 
+esp_err_t epaper_display_partial(int x, int y, int w, int h)
+{
+    esp_err_t err;
+
+    // 首次刷新必须 full（partial LUT 是差分，需要 full 建立基线）
+    // GxEPD2 行为也是把 _initial_refresh 时的 partial 自动转为 full
+    if (s_initial_refresh) {
+        ESP_LOGW(TAG, "首次刷新自动转 full（partial 需要先建立基线）");
+        return epaper_display_full();
+    }
+
+    // ---- 1. 物理屏裁剪 ----
+    if (w <= 0 || h <= 0) return ESP_OK;
+    int x1 = x, y1 = y, w1 = w, h1 = h;
+    if (x1 < 0) { w1 += x1; x1 = 0; }
+    if (y1 < 0) { h1 += y1; y1 = 0; }
+    if (x1 + w1 > EPD_W) w1 = EPD_W - x1;
+    if (y1 + h1 > EPD_H) h1 = EPD_H - y1;
+    if (w1 <= 0 || h1 <= 0) return ESP_OK;
+
+    // ---- 2. x、w 强制 8 对齐（IL0373 partial RAM 寻址按字节） ----
+    //   - x 向下对齐到 8 边界
+    //   - w 先把对齐过程吞掉的偏移补回去，再向上对齐到 8 边界
+    int dx = x1 & 7;
+    x1 -= dx;
+    w1 += dx;
+    if (w1 & 7) w1 = (w1 + 7) & ~7;
+    if (x1 + w1 > EPD_W) w1 = EPD_W - x1;
+    if (w1 <= 0) return ESP_OK;
+
+    // ---- 3. 切到 partial 模式（仅在状态变更时才重发 init） ----
+    if (!s_using_partial_mode) {
+        if ((err = il0373_init_partial()) != ESP_OK) {
+            ESP_LOGE(TAG, "il0373_init_partial 失败: %s", esp_err_to_name(err));
+            return err;
+        }
+        ESP_LOGI(TAG, "已切到 partial 模式");
+    }
+
+    const int row_bytes = EPD_W / 8;
+    const int win_bytes = w1 / 8;
+
+    // ---- 4. 双写：write+refresh+write（避免下次 partial 翻页 ghost） ----
+    //   IL0373 partial 刷新后控制器内部 current/previous 角色互换，
+    //   不再写一次会导致下一次 partial 用过期数据做差分基线
+    for (int pass = 0; pass < 2; pass++) {
+        if ((err = send_cmd(IL0373_PARTIAL_IN)) != ESP_OK) return err;
+        if ((err = il0373_set_partial_window(x1, y1, w1, h1)) != ESP_OK) return err;
+
+        // 0x13 写当前帧的窗口数据，按行从 framebuf 提取
+        if ((err = send_cmd(IL0373_DTM2)) != ESP_OK) return err;
+        for (int row = 0; row < h1; row++) {
+            const uint8_t *src = &s_framebuf[(x1 >> 3) + (y1 + row) * row_bytes];
+            if ((err = send_data(src, win_bytes)) != ESP_OK) return err;
+        }
+
+        if (pass == 0) {
+            // 仅第一次写完触发刷新
+            if ((err = send_cmd(IL0373_DISPLAY_REFRESH)) != ESP_OK) return err;
+            if ((err = wait_busy_idle(EPD_BUSY_TIMEOUT_MS, "PartialRefresh")) != ESP_OK) return err;
+        }
+
+        if ((err = send_cmd(IL0373_PARTIAL_OUT)) != ESP_OK) return err;
+    }
+
+    ESP_LOGI(TAG, "partial 完成 (x=%d y=%d w=%d h=%d)", x1, y1, w1, h1);
+    return ESP_OK;
+}
+
 esp_err_t epaper_sleep(void)
 {
     esp_err_t err;
@@ -443,6 +614,7 @@ esp_err_t epaper_sleep(void)
     // 0x02 Power Off + 等 BUSY 空闲
     if ((err = send_cmd(IL0373_POWER_OFF)) != ESP_OK) return err;
     if ((err = wait_busy_idle(EPD_BUSY_TIMEOUT_MS, "PowerOff")) != ESP_OK) return err;
+    s_using_partial_mode = false;
 
     // 0x07 0xA5 进入 Deep Sleep（参数必须是 0xA5）
     if ((err = cmd_p1(IL0373_DEEP_SLEEP, 0xA5)) != ESP_OK) {

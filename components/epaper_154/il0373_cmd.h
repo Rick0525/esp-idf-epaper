@@ -28,3 +28,8 @@
 #define IL0373_VCOM_DATA_INTERVAL       0x50
 #define IL0373_RESOLUTION_SETTING       0x61
 #define IL0373_VCOM_DC                  0x82
+
+// partial refresh 相关
+#define IL0373_PARTIAL_WINDOW           0x90   // 7 字节：x_lo, xe_lo, y_hi, y_lo, ye_hi, ye_lo, 0x01
+#define IL0373_PARTIAL_IN               0x91   // 进入 partial 模式（无参数）
+#define IL0373_PARTIAL_OUT              0x92   // 退出 partial 模式（无参数）

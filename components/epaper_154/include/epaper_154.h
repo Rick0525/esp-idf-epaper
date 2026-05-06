@@ -54,5 +54,13 @@ void epaper_draw_string_8x8(int x, int y, const char *s, bool black);
 // 内部含完整 IL0373 init 序列、5 张 LUT 下发、Power On
 esp_err_t epaper_display_full(void);
 
+// 局部刷新：把帧缓冲 (x,y,w,h) 区域用 partial LUT 单步刷到屏（约 350ms）
+//   - 坐标是物理屏坐标系（rotation=0 视角）；x、w 内部强制 8 对齐（向外扩张）
+//   - 调用前必须先 epaper_display_full() 至少一次（partial 是差分，需基线）
+//     首次调用会自动转调 epaper_display_full()
+//   - 内部双写（write+refresh+write）保证下次 partial 不残影
+//   - 频繁 partial 后建议每 N 次做一次 epaper_display_full() 清屏
+esp_err_t epaper_display_partial(int x, int y, int w, int h);
+
 // Power Off + Deep Sleep。下次使用前需重新 epaper_init
 esp_err_t epaper_sleep(void);

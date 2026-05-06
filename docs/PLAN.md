@@ -181,7 +181,7 @@ PLAN 节点 0-5 已全部完成（项目骨架 → SPI/GPIO 验证 → IL0373 �
 |---|---|---|---|
 | ~~**节点 6**：图形基元扩展~~ ✅ 已完成 | 加 `epaper_draw_vline` / `epaper_draw_rect` / `epaper_fill_rect` | 半天 | 用现有 `draw_pixel` 凑就行，加边界裁剪。`fill_rect` 实测无需按字节优化（耗时远小于 1.6s 全刷） |
 | ~~**节点 7**：rotation 旋转~~ ✅ 已完成 | `epaper_set_rotation(0/1/2/3)`，画点函数内做坐标变换 | 半天 | 在 `draw_pixel` 入口前转换 (x,y)。`width()/height()` 接口随旋转交换。正方形屏 logical 尺寸不变但方向变 |
-| **节点 8**：partial refresh | `epaper_display_partial(x,y,w,h)`，下发第二组 partial LUT、用 0x91/0x90/0x92 限定窗口 | 一天 | 5 张 partial LUT 直接复制 `GxEPD2_154_T8.cpp::lut_*_partial`；耗时从 1.6s → ~350ms；残影会积累，工程上每 N 次 partial 后做一次全刷清屏 |
+| ~~**节点 8**：partial refresh~~ ✅ 已完成 | `epaper_display_partial(x,y,w,h)`，下发第二组 partial LUT、用 0x91/0x90/0x92 限定窗口 | 一天 | 5 张 partial LUT 复制自 GxEPD2；实测 ~360ms（vs full 1550ms，4.4× 加速）；x、w 强制 8 对齐；双写 write+refresh+write 避免 ghost；首次自动转 full |
 | **节点 9**：GFX 字体支持 | `GFXfont/GFXglyph` 结构 + `epaper_draw_string_gfx`，嵌入一两个 Adafruit 字体（如 `FreeMonoBold9pt7b`） | 半天 | GFX 字体 MSB 在左（与帧缓冲一致），扫描方向比 8×8 字体更顺。需要 `getTextBounds` 辅助居中 |
 
 ### 中价值（按需）

@@ -1,51 +1,33 @@
 // 主程序入口
-// 节点 7：旋转支持（rotation 0/1/2/3）演示
-//   - 4 次全刷依次展示 0°/90°/180°/270°
-//   - 每屏左上角 "rot N deg" 标识当前角度
-//   - 顶部 + 左侧均有图形标识，用来区分上下/左右
+// 节点 8：partial refresh 演示
+//   - 先全刷画静态布局（标题 + 数字框）
+//   - 5 次 partial 刷新数字框内的计数 0..4，串口打印每次耗时
+//   - 最后全刷清屏作对比
 
 #include "epaper_154.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <stdio.h>
 
 static const char *TAG = "MAIN";
 
-// 在当前 rotation 下绘制一个带方向标识的内容：
-// - 整屏外框
-// - 左上角角度标签（"rot N deg"）+ 一条横向分隔线
-// - 顶边一行实心矩形（标识"上方"）
-// - 左边一列等距 vline（标识"左方"）
-// - 中央 "Hello, IDF!" 文本
-static void draw_rotated_demo(int angle_deg)
+// partial 窗口：x=64, w=80（均 8 对齐），覆盖中央数字区
+#define COUNTER_X 64
+#define COUNTER_Y 28
+#define COUNTER_W 80
+#define COUNTER_H 16
+
+static void redraw_counter(int n)
 {
-    int W = epaper_width(), H = epaper_height();
-    char title[16];
-    snprintf(title, sizeof(title), "rot %d", angle_deg);
-
-    epaper_clear(0xFF);
-
-    // 整屏外框
-    epaper_draw_rect(0, 0, W, H, true);
-
-    // 左上角文字（紧贴左上、便于辨认旋转方向）
-    epaper_draw_string_8x8(4, 4, title, true);
-    epaper_draw_hline(0, 16, W, true);
-
-    // "顶边"标识：紧贴上沿的实心横条（用户视角下永远在顶部）
-    epaper_fill_rect(0, 18, W, 4, true);
-
-    // "左边"标识：靠左的 5 条等距短 vline（用户视角下永远在左侧）
-    for (int i = 0; i < 5; i++) {
-        epaper_draw_vline(4 + i * 3, 30, 40, true);
-    }
-
-    // 中央文本
-    epaper_draw_string_8x8(W / 2 - 44, H / 2 - 4, "Hello, IDF!", true);
-
-    // 底部标签（用户视角下永远在底部）
-    epaper_draw_string_8x8(4, H - 12, "bottom", true);
+    // 清掉数字框内壁（保留 1px 边框）
+    epaper_fill_rect(COUNTER_X + 1, COUNTER_Y + 1,
+                     COUNTER_W - 2, COUNTER_H - 2, false);
+    // 在框内画数字（8x8 字体，居中）
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d", n);
+    epaper_draw_string_8x8(COUNTER_X + 8, COUNTER_Y + 4, buf, true);
 }
 
 void app_main(void)
@@ -53,20 +35,47 @@ void app_main(void)
     ESP_LOGI(TAG, "boot ok");
 
     ESP_ERROR_CHECK(epaper_init());
+    epaper_set_rotation(0);
 
-    for (int r = 0; r < 4; r++) {
-        epaper_set_rotation(r);
-        ESP_LOGI(TAG, "rotation=%d 逻辑尺寸=%dx%d", r, epaper_width(), epaper_height());
+    // ---- 1. 初始全刷：标题 + 数字框 + 计数 0 ----
+    epaper_clear(0xFF);
+    epaper_draw_string_8x8(8, 8, "Partial demo", true);
+    epaper_draw_hline(0, 22, EPD_W, true);
+    epaper_draw_string_8x8(8, 32, "Count:", true);
+    epaper_draw_rect(COUNTER_X, COUNTER_Y, COUNTER_W, COUNTER_H, true);
+    redraw_counter(0);
+    epaper_draw_string_8x8(8, 60, "watching partial...", true);
 
-        draw_rotated_demo(r * 90);
+    int64_t t0 = esp_timer_get_time();
+    ESP_ERROR_CHECK(epaper_display_full());
+    int64_t t1 = esp_timer_get_time();
+    ESP_LOGI(TAG, "全刷耗时 %lld ms", (t1 - t0) / 1000);
 
-        ESP_ERROR_CHECK(epaper_display_full());
-        ESP_LOGI(TAG, "rotation=%d 全刷完成", r);
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
-        // 留 2 秒给肉眼观察
-        vTaskDelay(pdMS_TO_TICKS(2000));
+    // ---- 2. 5 次 partial：数字 1..5 ----
+    for (int i = 1; i <= 5; i++) {
+        redraw_counter(i);
+
+        t0 = esp_timer_get_time();
+        ESP_ERROR_CHECK(epaper_display_partial(COUNTER_X, COUNTER_Y,
+                                                COUNTER_W, COUNTER_H));
+        t1 = esp_timer_get_time();
+        ESP_LOGI(TAG, "partial %d 耗时 %lld ms", i, (t1 - t0) / 1000);
+
+        vTaskDelay(pdMS_TO_TICKS(800));
     }
 
+    // ---- 3. 全刷清屏对比 ----
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    epaper_clear(0xFF);
+    epaper_draw_string_8x8(8, 60, "all done (full)", true);
+
+    t0 = esp_timer_get_time();
+    ESP_ERROR_CHECK(epaper_display_full());
+    t1 = esp_timer_get_time();
+    ESP_LOGI(TAG, "末尾全刷耗时 %lld ms", (t1 - t0) / 1000);
+
     ESP_ERROR_CHECK(epaper_sleep());
-    ESP_LOGI(TAG, "节点 7 完成：4 个旋转角度演示已上屏");
+    ESP_LOGI(TAG, "节点 8 完成");
 }

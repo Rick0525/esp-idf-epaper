@@ -190,4 +190,46 @@ CHANGELOG 自身在本节点的角色：节点 0-5 段落齐全，作为本次�
 - **不在 IL0373 层做帧缓冲翻转**：理论上可以在写 DTM2 前把 framebuf 整片转置/翻转再发，但代码复杂度远高于 draw_pixel 入口变换，且失去"画到一半切 rotation"的灵活性。坚持走 GxEPD2/Adafruit_GFX 路线
 - **不实现 mirror**：GxEPD2 有 `_mirror` 字段处理镜像（一些屏物理上左右反），本屏不需要，省了
 
+## 节点 8 — partial refresh（局部刷新）
+
+代码改动：
+- `il0373_cmd.h`：新增 partial 三命令
+  - `IL0373_PARTIAL_WINDOW = 0x90`（7 字节：x_lo, xe_lo, y_hi, y_lo, ye_hi, ye_lo, 0x01）
+  - `IL0373_PARTIAL_IN     = 0x91`（无参数）
+  - `IL0373_PARTIAL_OUT    = 0x92`（无参数）
+- `epaper_154.c` 新增：
+  - 5 张 partial LUT（vcomDC/ww/bw/wb/bb_partial），第一行 phase length = `Tx19 = 0x20`、其它行全 0；直接复制自 GxEPD2_154_T8.cpp `lut_*_partial`
+  - 静态状态 `s_using_partial_mode`：跟踪当前模式，只在切换时重发 init（避免重复下 LUT）
+  - `il0373_init_partial`：与 `init_full` 仅两处不同——`VCOM_DATA_INTERVAL` 0x97→0x17；LUT 用 partial 系列；末尾置 `s_using_partial_mode=true`
+  - `il0373_init_full` 末尾加 `s_using_partial_mode=false`，`epaper_init` / `epaper_sleep` 也重置该状态
+  - `il0373_set_partial_window(x,y,w,h)`：发 0x90 + 7 字节，x 按字节单字节（屏宽 152<256，与 GxEPD2 一致）、y 双字节
+  - `epaper_display_partial(x,y,w,h)`：完整 partial 流程
+- `epaper_154.h`：新增 `epaper_display_partial` 声明
+- `main/CMakeLists.txt`：加 `PRIV_REQUIRES esp_timer`（用 `esp_timer_get_time` 测耗时）
+- `main/main.c`：counter 演示——先 full 画"Partial demo"标题与数字框；循环 5 次 partial 把框内数字 1→5 刷新；末尾 full 清屏作对比
+
+`epaper_display_partial` 关键设计：
+1. **首次自动转 full**：若 `s_initial_refresh==true`，partial 没基线会乱刷，自动调 `epaper_display_full()`（与 GxEPD2 行为一致）
+2. **8 字节强制对齐**：IL0373 RAM 寻址按字节，x 向下对齐到 8 边界、w 向上对齐到 8 边界，对齐过程吞掉的偏移先补回再对齐
+3. **模式切换懒执行**：`if (!s_using_partial_mode) il0373_init_partial();`，连续 partial 不重发 LUT
+4. **双写（write+refresh+write）**：IL0373 partial 刷新后控制器内部 current/previous 角色互换，不再写一次会导致下次 partial 用过期帧做差分基线产生 ghost。在同一 API 内做闭环，上层调用语义干净
+
+验证（串口实测）：
+- 首次全刷耗时 **1598ms**（含 init_full 序列）
+- 5 次 partial 耗时各 **360ms**（GxEPD2 标称 350ms，几乎完美吻合）
+- **partial 比 full 快 ~4.4×**
+- 末尾全刷耗时 **1549ms**，恢复全屏白底 + 新内容
+- 切到 partial 模式时 PowerOn(P) 0ms（控制器已上电、wait_busy_idle 1ms tick 后 BUSY 已是高，与 init_full 重新切回 full 模式时同理）
+- 用户肉眼确认：partial 时屏不再全屏闪烁、只局部刷新数字区，其它内容保持稳定
+
+设计决策：
+- **partial 用物理坐标、不跟随 rotation**：rotation 1/3 下 8 对齐约束作用于物理 x（对应逻辑 y），逻辑窗口转物理 bbox 后还要再对齐——复杂度暴涨。第一版让用户在 rotation=0 下用 partial。如确需 rotation 下用，未来可加内部坐标变换层
+- **partial LUT 第一行用 0x20 而不是 0x19**：GxEPD2 注释明确说 0x19=25 phase length 太短（屏行为不稳）、0x20=32 更稳；照搬不动
+- **不暴露 `epaper_using_partial_mode()` 查询**：上层不需要知道当前模式，状态由本组件全权管理。如未来需要诊断再加
+- **partial 写帧的 SPI transaction 按行拆分**：每行 `w/8` 字节一次 `send_data`，例如 80×16 窗口共 16 次 SPI transaction、每次 10 字节。看似低效但 SPI 总耗时 <2ms（远小于 360ms 刷新），优化每行合并成单次 transaction 改动量大、收益不可见，不做
+- **不做"残影 N 次后自动 full 清屏"**：是上层 UI 策略而非驱动职责（不同应用阈值不同）。文档建议用户每隔 ~10 次 partial 调 `epaper_display_full()` 清一次
+
+**关键经验**：partial 的双写是 IL0373 系列的硬要求（GxEPD2 在 drawImage 而非 refresh 内做了双写）。如果只在 API 内单写 + refresh，肉眼第一次看不出问题，但连续 partial 几次就会看到上一次的残影叠加。这种"对了一半"的 bug 比完全错更难定位——必须照搬 ground truth 的完整流程，不能省略看似冗余的步骤
+
+
 
