@@ -1,10 +1,24 @@
 # eink_screen
 
-ESP32-PICO-KIT v4.1 + 1.54" **0154T8 规格**黑白墨水屏（IL0373 控制器）的 ESP-IDF v6.0.1 驱动与示例。
+ESP32-PICO-KIT v4.1 + 1.54" **0154T8 规格**黑白墨水屏（IL0373 控制器）的 ESP-IDF v6.0.1 **驱动库 + 示例工程**。
+
+设计目标：做一个在 ESP-IDF 下**好复用的基础驱动库**，组件目录 `components/epaper_154/` 可整体拷到任何 IDF 项目即用。视觉层不绑定 Arduino——`GxEPD2` 仅作为**实现层 ground truth**（init 序列、5 张 LUT、partial 流程严格照搬），上层 API 形态、字体选型、demo 风格自主决定。
 
 实物屏：WeiFeng（无锡威峰科技）`WF0154T8PCZ17230H`，与 Good Display `GDEW0154T8` 是同规格不同品牌的兼容屏（详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)）。
 
-从零手写的 C 驱动，不依赖第三方组件；初始化序列、5 张全刷 LUT、刷新流程**严格照搬** Arduino [GxEPD2](https://github.com/ZinggJM/GxEPD2) 库的 `GxEPD2_154_T8` 类。
+## 库能力一览
+
+| 域 | API | 节点 |
+|---|---|---|
+| **初始化 / 帧缓冲** | `epaper_init` / `epaper_clear` | 0-2 |
+| **图形基元** | `draw_pixel` / `draw_hline` / `draw_vline` / `draw_rect` / `fill_rect` | 3, 6 |
+| **变换** | `epaper_set_rotation` (0/1/2/3) / `epaper_width` / `epaper_height` | 7 |
+| **字体（点阵）** | `draw_string_8x8` — 复古 8×8 ASCII | 4 |
+| **字体（比例）** | `draw_string_gfx` / `get_text_bounds_gfx` — Adafruit_GFX 兼容格式 | 9 |
+| **bitmap** | `draw_bitmap` — 1bit 透明覆盖 | 10 |
+| **显示** | `display_full` (~1.6s) / `display_partial` (~360ms) / `sleep` | 2, 8 |
+
+物理分辨率 **152×152**；坐标原点在屏左上（rotation=0 时）。
 
 ## 硬件接线
 
@@ -34,37 +48,158 @@ ESP32-PICO-KIT v4.1 + 1.54" **0154T8 规格**黑白墨水屏（IL0373 控制器�
      └─────────────────┘                └──────────────┘
 ```
 
-## 显示效果
+## 默认 demo
 
-烧录默认 `main/main.c` 后屏上显示：
+烧录默认 `main/main.c`（节点 10：bitmap 演示）后屏上显示同一份 16×16 上箭头 bitmap 贴 5 处（中央 + 4 角）+ 中央方框 + 顶部标题 + "x5 same data" 说明。
 
-```
-┌──────────────────────┐
-│ Hello, IDF!          │
-│ ──────────────────── │
-│ GDEW0154T8 OK        │
-│                      │
-│                      │
-└──────────────────────┘
-```
-
-> 屏物理玻璃边内会有一圈对称白边——这是 GDEW0154T8 的物理特性（瞬时黑相能扫到、稳定显示扫不到的环带），与驱动无关。详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)。
+`main/main.c` 是示例工程而非库本体——可随意改写。把它换成自己的应用代码不会影响 `components/epaper_154/` 库的任何东西。
 
 ## 公开 API
 
 ```c
 #include "epaper_154.h"
 
-esp_err_t epaper_init(void);                    // SPI/GPIO 初始化 + 硬件复位
-void      epaper_clear(uint8_t color);          // 帧缓冲填色，0xFF=白 / 0x00=黑
+// ---- 初始化 ----
+esp_err_t epaper_init(void);                          // SPI/GPIO 初始化 + 硬件复位
+esp_err_t epaper_sleep(void);                         // POWER_OFF + DEEP_SLEEP（唤醒只能硬复位）
+
+// ---- 帧缓冲填充（不动屏） ----
+void      epaper_clear(uint8_t color);                // 0xFF=白 / 0x00=黑
+
+// ---- 图形基元 ----
 void      epaper_draw_pixel(int x, int y, bool black);
 void      epaper_draw_hline(int x, int y, int len, bool black);
-void      epaper_draw_string_8x8(int x, int y, const char *s, bool black);
-esp_err_t epaper_display_full(void);            // 一次完整全刷（约 1.6s）
-esp_err_t epaper_sleep(void);                   // POWER_OFF + DEEP_SLEEP（唤醒需硬复位）
+void      epaper_draw_vline(int x, int y, int len, bool black);
+void      epaper_draw_rect(int x, int y, int w, int h, bool black);   // 仅边框
+void      epaper_fill_rect(int x, int y, int w, int h, bool black);   // 实心填充
+
+// ---- 旋转（纯软件层坐标变换，跟随所有 draw_*） ----
+void      epaper_set_rotation(uint8_t rotation);      // 0=正向、1=顺 90°、2=180°、3=顺 270°
+int       epaper_width(void);                         // rotation 1/3 时为 EPD_H
+int       epaper_height(void);                        // rotation 1/3 时为 EPD_W
+
+// ---- 字体 ----
+void      epaper_draw_string_8x8(int x, int y, const char *s, bool black);  // 左上角坐标
+void      epaper_draw_string_gfx(int x, int y, const char *s,
+                                 const GFXfont *font, bool black);          // baseline 坐标
+void      epaper_get_text_bounds_gfx(const char *s, const GFXfont *font,
+                                     int *out_w, int *out_h);
+
+// ---- bitmap（1bit raster，每行 (w+7)/8 字节、行内 MSB 在左） ----
+void      epaper_draw_bitmap(int x, int y, const uint8_t *bmp,
+                             int w, int h, bool black);
+                             // bit=1 涂 black 指定色、bit=0 透明（不动）
+
+// ---- 屏更新 ----
+esp_err_t epaper_display_full(void);                  // 全刷 ~1.6s
+esp_err_t epaper_display_partial(int x, int y,
+                                  int w, int h);      // 局部刷 ~360ms（4.4× 加速）
+                                                       // 物理坐标，x/w 自动 8 对齐
+                                                       // 首次会自动转 full（需基线）
 ```
 
-`EPD_W = EPD_H = 152`。坐标原点在左上角。
+`EPD_W = EPD_H = 152`（物理分辨率宏，不随 rotation 变；用 `epaper_width()/height()` 读逻辑尺寸）。
+
+## 使用示例
+
+### 最小 hello world
+
+```c
+#include "epaper_154.h"
+ESP_ERROR_CHECK(epaper_init());
+epaper_clear(0xFF);
+epaper_draw_string_8x8(10, 10, "Hello, IDF!", true);
+ESP_ERROR_CHECK(epaper_display_full());
+ESP_ERROR_CHECK(epaper_sleep());
+```
+
+### partial 局部刷新（counter 计数器）
+
+```c
+// 1. 先全刷画静态布局
+epaper_clear(0xFF);
+epaper_draw_string_8x8(8, 8, "Count:", true);
+epaper_draw_rect(64, 4, 80, 16, true);
+epaper_display_full();    // ~1.6s，首次必须 full（建立 partial 基线）
+
+// 2. 之后每次只刷数字框（~360ms）
+for (int i = 1; i <= 100; i++) {
+    char buf[8]; snprintf(buf, sizeof(buf), "%d", i);
+    epaper_fill_rect(65, 5, 78, 14, false);   // 清白底
+    epaper_draw_string_8x8(70, 8, buf, true);
+    epaper_display_partial(64, 4, 80, 16);    // 只刷这块矩形
+}
+// 频繁 partial 后建议每 ~10 次做一次 full 清屏避免残影积累
+```
+
+### GFX 比例字体 + 居中
+
+```c
+#include "FreeSansBold9pt7b.h"   // fonts/ 下任意 .h
+
+const char *s = "centered";
+int w, h;
+epaper_get_text_bounds_gfx(s, &FreeSansBold9pt7b, &w, &h);
+int cx = (epaper_width() - w) / 2;
+
+// 注意：(x, y) 是 baseline，不是左上
+// y_baseline = y_top + yAdvance - 5（"j/g/p/q" 等下伸字符预留）
+epaper_draw_string_gfx(cx, 30, s, &FreeSansBold9pt7b, true);
+
+// '\n' 自动换行（cursor x 回到入参 x、y += font->yAdvance）
+epaper_draw_string_gfx(8, 60, "line A\nline B", &FreeSansBold9pt7b, true);
+```
+
+### bitmap 贴图
+
+```c
+// 16×16 自定义图标，每行 2 字节 × 16 行 = 32 字节，行内 MSB 在左
+static const uint8_t my_icon[] = {
+    0x01, 0x80,  // .......##.......
+    0x03, 0xC0,  // ......####......
+    /* ... */
+};
+
+epaper_draw_bitmap(10, 10, my_icon, 16, 16, true);  // 贴一份
+epaper_draw_bitmap(50, 10, my_icon, 16, 16, true);  // 同数据贴第二份
+// bit=1 涂 black 指定色、bit=0 不动 → 可在已有内容上叠加贴图
+```
+
+### 旋转
+
+```c
+epaper_set_rotation(1);                       // 顺 90°
+// 此后所有 draw_* 用旋转后的逻辑坐标系
+// epaper_width()/height() 自动交换（正方形屏数值不变）
+epaper_draw_string_8x8(0, 0, "TOP-LEFT", true);   // 用户视角的左上
+```
+
+## 添加自己的字体
+
+GFX 字体只是数据，库代码无需任何改动：
+
+1. 从 [Adafruit-GFX-Library/Fonts/](https://github.com/adafruit/Adafruit-GFX-Library/tree/master/Fonts) 拷一个 `.h` 到 `components/epaper_154/fonts/`
+2. 把第二行 `#include <Adafruit_GFX.h>` 改成 `#include "gfxfont.h"`
+3. 在你的代码里 `#include "FreeXxxYpt7b.h"` 直接用
+
+如要更"小屏顺眼"的字体，可以试 U8g2 用 `lv_font_conv` 或 [u8g2_to_gfx](https://github.com/olikraus/u8g2/blob/master/tools/u8g2_oled_font_to_gfx.pl) 转 GFX 格式。已知 FreeSans 系列在 9pt 下圆角处锯齿明显（1bit 输出无抗锯齿），若不能接受可换 FreeMono、U8g2 helvB、专门的 1bit 位图字体。
+
+## 添加自己的 bitmap
+
+用 Python 的 Pillow 把 PNG/JPG 转成 1bit C 数组：
+
+```python
+from PIL import Image
+img = Image.open('icon.png').convert('1')           # 1bit 黑白
+img = img.resize((24, 24))                          # 调整尺寸
+data = img.tobytes()                                # bytes，按行 packed MSB-first
+print('static const uint8_t icon_24x24[] = {')
+print(',\n'.join('  ' + ', '.join(f'0x{b:02X}' for b in data[i:i+8])
+                 for i in range(0, len(data), 8)))
+print('};')
+```
+
+或用 LVGL 的[在线 Image Converter](https://lvgl.io/tools/imageconverter)，输出选 "C array" + "1 bit per pixel"。注意位序——LVGL 输出可能是 LSB-first，传入前需要按位反转或选择 MSB-first 选项。
 
 ## 编译与烧录
 
@@ -116,15 +251,20 @@ eink_screen/
 ├── docs/
 │   ├── PLAN.md                        # 移植计划与节点表
 │   ├── CHANGELOG.md                   # 每个原子提交的功能记录
-│   └── HARDWARE_NOTES.md              # 硬件特性研究笔记（暂搁置项）
+│   ├── HARDWARE_NOTES.md              # 硬件特性研究笔记 + 字体方案选型
+│   └── EPAPER_IL0373_GUIDE.md         # IL0373 通用驱动笔记（任何 0154T8 屏可参考）
 ├── main/
-│   ├── CMakeLists.txt
-│   └── main.c                         # 示例：helloWorld 演示
+│   ├── CMakeLists.txt                 # PRIV_REQUIRES esp_timer
+│   └── main.c                         # 示例：bitmap 演示（按需自行替换）
 └── components/
-    └── epaper_154/
+    └── epaper_154/                    # 整个目录拷到任何 IDF 项目即用
         ├── CMakeLists.txt             # PRIV_REQUIRES esp_driver_spi esp_driver_gpio
-        ├── include/epaper_154.h       # 公开 API
-        ├── epaper_154.c               # 驱动实现 + 帧缓冲 + 5 张全刷 LUT
+        ├── include/
+        │   ├── epaper_154.h           # 公开 API
+        │   └── gfxfont.h              # GFXglyph/GFXfont 结构定义（PROGMEM 兼容）
+        ├── fonts/                     # GFX 字体目录，可任意添加 .h
+        │   └── FreeSansBold9pt7b.h    # 默认字体
+        ├── epaper_154.c               # 驱动实现 + 帧缓冲 + LUT + 渲染器
         ├── il0373_cmd.h               # IL0373 命令字节宏
         └── font8x8_basic.h            # dhepper 公共域 8×8 字体
 ```
@@ -156,29 +296,44 @@ eink_screen/
 - 字节内位序反（帧缓冲约定 MSB→较小 X）
 - DTM1/DTM2 顺序错——首次刷新必须 DTM1 + 全 0xFF 作为 previous 基线，否则差分 LUT 按未知基线刷新
 - 没等 BUSY 拉到空闲就发下一条命令
+- **partial 后看到上次内容残影**：partial 必须 write+refresh+write 双写（IL0373 内部 current/previous 翻页机制）。库内已实现，自写驱动遇到此问题查 `epaper_display_partial` 实现
 
-### 6. 字符变形 / 颠倒
-- font8x8 LSB 在左，与画点 MSB→较小 X 顺序相反，扫描位时必须 `bits & (1u << col)`，不要写成 `0x80 >> col`
+### 6. partial 第一次调用走了 1.6s
+预期行为：partial LUT 是差分，需要 full 建立基线。库会在 `s_initial_refresh==true` 时自动把 `display_partial` 转调 `display_full`。日志会有 `首次刷新自动转 full（partial 需要先建立基线）`。
 
-### 7. 串口端口被占用
+### 7. partial 窗口实际比传入的大
+预期行为：IL0373 RAM 寻址按字节，x 和 w 强制 8 对齐——传入 `(63, 0, 70, 16)` 实际刷 `(56, 0, 80, 16)`。库自动对齐，不报错。
+
+### 8. GFX 字体串显示位置偏低
+`epaper_draw_string_gfx` 的 `(x, y)` 是 **baseline**（字母 A 的底部），不是左上角。要按"上沿"定位用 `y_baseline = y_top + font->yAdvance - 5`（5 是给下伸字符 j/g/p/q 留的空间，按字体不同微调）。
+
+### 9. 字符变形 / 颠倒
+- `font8x8` LSB 在左，画字符时 `bits & (1u << col)`（**不是** `0x80 >> col`）
+- GFX 字体则是 MSB 在左，与帧缓冲一致——切勿把两种字体的扫描代码混用
+
+### 10. 串口端口被占用
 ```sh
 lsof /dev/cu.usbserial-XXX
 ```
 通常是 Arduino IDE 或 VS Code 的 serial monitor 在占。
 
-### 8. ESP-IDF v6.0 构建报错"esp_log not found"
+### 11. ESP-IDF v6.0 构建报错"esp_log not found"
 v6.0 把 `esp_log` 重命名为 `log`。`PRIV_REQUIRES` 里写 `log` 而不是 `esp_log`。`log` / `freertos` / `esp_common` / `esp_hw_support` 是 common requirements，自动注入，**不要手写**。
 
-### 9. GPIO 没有上拉
+### 12. GPIO 没有上拉
 v6.0 起 GPIO 驱动不再隐式上拉。`gpio_config_t.pull_up_en` / `pull_down_en` 必须显式，否则 BUSY 引脚悬空读到随机值。
 
 ## 关键参考
 
-- Arduino 原工程：`/Users/rick/Documents/Arduino/libraries/GxEPD2/src/epd/GxEPD2_154_T8.{h,cpp}`（ground truth，移植时反复对照）
+- Arduino 原工程：`/Users/rick/Documents/Arduino/libraries/GxEPD2/src/epd/GxEPD2_154_T8.{h,cpp}`（实现层 ground truth，移植任何变更必先对照）
 - IL0373 datasheet：[http://www.e-paper-display.com/download_detail/downloadsId=535.html](http://www.e-paper-display.com/download_detail/downloadsId=535.html)
 - GDEW0154T8 产品页：[http://www.e-paper-display.com/products_detail/productId=345.html](http://www.e-paper-display.com/products_detail/productId=345.html)
-- 字体来源：[github.com/dhepper/font8x8](https://github.com/dhepper/font8x8)（公共域）
+- 8×8 字体：[github.com/dhepper/font8x8](https://github.com/dhepper/font8x8)（公共域）
+- GFX 字体格式 + FreeSans：[github.com/adafruit/Adafruit-GFX-Library](https://github.com/adafruit/Adafruit-GFX-Library)（BSD 3-clause）
+- IL0373 通用移植笔记：[`docs/EPAPER_IL0373_GUIDE.md`](docs/EPAPER_IL0373_GUIDE.md)（任何 0154T8 屏项目可直接拿走）
 
 ## 许可
 
-代码部分：MIT。嵌入的 `font8x8_basic.h` 为公共域。
+- 项目代码：MIT
+- `font8x8_basic.h`：公共域（来自 dhepper/font8x8）
+- `gfxfont.h` + `fonts/FreeSansBold9pt7b.h`：BSD 3-clause（Copyright © 2012 Adafruit Industries）；字体本体由 [GNU FreeFont](https://www.gnu.org/software/freefont/) 项目以 GPL with font-embedding exception 提供
