@@ -87,15 +87,13 @@ void      epaper_get_text_bounds_gfx(const char *s, const GFXfont *font,
 
 // ---- bitmap（1bit raster，每行 (w+7)/8 字节、行内 MSB 在左） ----
 void      epaper_draw_bitmap(int x, int y, const uint8_t *bmp,
-                             int w, int h, bool black);
-                             // bit=1 涂 black 指定色、bit=0 透明（不动）
+                             int w, int h, bool black);  // bit=0 透明覆盖
 
 // ---- 屏更新 ----
 esp_err_t epaper_display_full(void);                  // 全刷 ~1.6s
-esp_err_t epaper_display_partial(int x, int y,
-                                  int w, int h);      // 局部刷 ~360ms（4.4× 加速）
-                                                       // 物理坐标，x/w 自动 8 对齐
-                                                       // 首次会自动转 full（需基线）
+esp_err_t epaper_display_partial(int x, int y, int w, int h);
+                                                      // 局部刷 ~360ms；物理坐标
+                                                      // x/w 自动 8 对齐；首次自动转 full
 ```
 
 `EPD_W = EPD_H = 152`（物理分辨率宏，不随 rotation 变；用 `epaper_width()/height()` 读逻辑尺寸）。
@@ -203,46 +201,27 @@ print('};')
 
 ## 编译与烧录
 
-### 激活 ESP-IDF 环境
-
-每个新 shell 都要 source 一次：
+每个新 shell 都要先激活 ESP-IDF 环境：
 
 ```sh
 source ~/.espressif/tools/activate_idf_v6.0.1.sh
 ```
 
-### 交互式（推荐手动操作）
-
-激活后用 `idf.py` 别名：
+激活后用 `idf.py` 别名（`set-target esp32` 仅首次需要）：
 
 ```sh
-idf.py set-target esp32     # 仅首次
+idf.py set-target esp32
 idf.py build
 idf.py -p /dev/cu.usbserial-XXX flash monitor
 ```
 
-### 自动化脚本（CI / shell 别名不可用时）
+USB 重插后串口端口名会变（例 `usbserial-10` → `usbserial-110`），用 `ls /dev/cu.* | grep usbserial` 重新探测。
 
-`idf.py` 是激活脚本注入的 shell 别名，在 `&&` 链或非交互 shell 里不会展开。
-此时改用 IDF 安装目录里的 Python venv + `tools/idf.py` 绝对路径调用：
-
-```sh
-PY=$IDF_PYTHON_ENV_PATH/bin/python
-IDF_PY=$IDF_PATH/tools/idf.py
-PROJ=$(pwd)
-
-$PY $IDF_PY -C $PROJ build
-$PY $IDF_PY -C $PROJ -p /dev/cu.usbserial-XXX flash
-```
-
-`$IDF_PYTHON_ENV_PATH` 与 `$IDF_PATH` 由激活脚本自动设置。
-
-### 串口端口探测
-
-USB 重插后端口名会变（例 `usbserial-10` → `usbserial-110`）：
+`idf.py` 是 shell 别名，在 `&&` 链或非交互 shell 里不展开。CI / 自动化场景改用激活脚本注入的环境变量直调：
 
 ```sh
-ls /dev/cu.* | grep usbserial
+$IDF_PYTHON_ENV_PATH/bin/python $IDF_PATH/tools/idf.py -C $(pwd) build
+$IDF_PYTHON_ENV_PATH/bin/python $IDF_PATH/tools/idf.py -C $(pwd) -p /dev/cu.usbserial-XXX flash
 ```
 
 ## 项目结构
@@ -336,12 +315,6 @@ OTP 路径全刷慢 ~3 倍但显示无明显异常（清晰可读、无残影、
 lsof /dev/cu.usbserial-XXX
 ```
 通常是 Arduino IDE 或 VS Code 的 serial monitor 在占。
-
-### 11. ESP-IDF v6.0 构建报错"esp_log not found"
-v6.0 把 `esp_log` 重命名为 `log`。`PRIV_REQUIRES` 里写 `log` 而不是 `esp_log`。`log` / `freertos` / `esp_common` / `esp_hw_support` 是 common requirements，自动注入，**不要手写**。
-
-### 12. GPIO 没有上拉
-v6.0 起 GPIO 驱动不再隐式上拉。`gpio_config_t.pull_up_en` / `pull_down_en` 必须显式，否则 BUSY 引脚悬空读到随机值。
 
 ## 关键参考
 
