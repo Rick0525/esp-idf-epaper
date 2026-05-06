@@ -552,6 +552,23 @@ void epaper_draw_string_gfx(int x, int y, const char *s, const GFXfont *font, bo
     }
 }
 
+void epaper_draw_bitmap(int x, int y, const uint8_t *bmp, int w, int h, bool black)
+{
+    if (bmp == NULL || w <= 0 || h <= 0) return;
+    int row_bytes = (w + 7) / 8;
+    for (int row = 0; row < h; row++) {
+        const uint8_t *line = &bmp[row * row_bytes];
+        for (int col = 0; col < w; col++) {
+            uint8_t byte = line[col >> 3];
+            uint8_t bit  = 0x80u >> (col & 7);   // MSB-first，与帧缓冲一致
+            if (byte & bit) {
+                // bit=1 涂 black 指定色；bit=0 不动（透明语义）
+                epaper_draw_pixel(x + col, y + row, black);
+            }
+        }
+    }
+}
+
 void epaper_get_text_bounds_gfx(const char *s, const GFXfont *font, int *out_w, int *out_h)
 {
     if (s == NULL || font == NULL) {

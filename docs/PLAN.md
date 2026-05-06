@@ -189,8 +189,8 @@ PLAN 节点 0-5 已全部完成（项目骨架 → SPI/GPIO 验证 → IL0373 �
 | 候选节点 | 内容 |
 |---|---|
 | 圆 / 椭圆 / 三角形等 GFX 基元 | `draw_circle` / `fill_circle`，照搬 Adafruit_GFX 的 Bresenham 实现 |
-| 位图绘制 | `epaper_draw_bitmap(x, y, const uint8_t *bmp, w, h)`，本质就是按位 memcpy 进帧缓冲 |
-| 文本居中辅助 | `epaper_get_text_bounds(s, font, &w, &h)`，给 UI 居中对齐用 |
+| ~~位图绘制~~ ✅ 已完成（节点 10） | `epaper_draw_bitmap(x, y, const uint8_t *bmp, w, h, black)`，按行 raster + 透明覆盖语义；跟随 rotation |
+| ~~文本居中辅助~~ ✅ 已完成（节点 9 一并） | `epaper_get_text_bounds_gfx(s, font, &w, &h)` |
 | 中文字体 | U8g2 wqy 系列（GB2312 / 子集裁剪），或自己用 PIL 把 TTF 转点阵 |
 
 ### 暂不计划（性价比低）

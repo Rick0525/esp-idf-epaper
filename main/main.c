@@ -1,16 +1,42 @@
 // 主程序入口
-// 节点 9：GFX 字体渲染器演示
-//   - 上半屏：8×8 复古点阵字体（节点 4 起）作为对照
-//   - 下半屏：FreeSansBold9pt7b（GFX 比例字体）— 基础库默认字
-//     · "Hello, IDF!" 普通显示
-//     · 一行居中（用 epaper_get_text_bounds_gfx 算宽度）
-//     · '\n' 多行换行
+// 节点 10：bitmap 演示
+//   - 硬编码一份 16×16 上箭头 bitmap（共 32 字节）
+//   - 同一份数据贴 5 处：屏中央 + 4 角
+//   - 中央那份外加 draw_rect 边框，验证 bitmap 与图形基元能叠加
+//   - 顶部 8×8 标题、底部说明
 
 #include "epaper_154.h"
-#include "FreeSansBold9pt7b.h"
 #include "esp_log.h"
 
 static const char *TAG = "MAIN";
+
+// 16×16 上箭头：每行 2 字节 × 16 行 = 32 字节
+// 数据按行 raster scan，行内 MSB 对应较小 x（与帧缓冲一致）
+//
+// 注释里的 #/. 直观显示像素：# = bit 1（要画）、. = bit 0（透明）
+static const uint8_t arrow_up_16x16[] = {
+    0x01, 0x80,  // .......##.......
+    0x03, 0xC0,  // ......####......
+    0x07, 0xE0,  // .....######.....
+    0x0F, 0xF0,  // ....########....
+    0x1F, 0xF8,  // ...##########...
+    0x3F, 0xFC,  // ..############..
+    0x7F, 0xFE,  // .##############.
+    0xFF, 0xFF,  // ################
+    0x03, 0xC0,  // ......####......
+    0x03, 0xC0,  // ......####......
+    0x03, 0xC0,  // ......####......
+    0x03, 0xC0,  // ......####......
+    0x03, 0xC0,  // ......####......
+    0x03, 0xC0,  // ......####......
+    0x03, 0xC0,  // ......####......
+    0x03, 0xC0,  // ......####......
+};
+
+static void draw_arrow(int x, int y)
+{
+    epaper_draw_bitmap(x, y, arrow_up_16x16, 16, 16, true);
+}
 
 void app_main(void)
 {
@@ -21,32 +47,31 @@ void app_main(void)
 
     epaper_clear(0xFF);
 
-    // ---- 上半屏：8×8 字体对照（左上角 (x,y)） ----
-    epaper_draw_string_8x8(8, 6, "8x8 font:", true);
-    epaper_draw_string_8x8(8, 18, "Hello, IDF!", true);
-    epaper_draw_hline(0, 32, EPD_W, true);
+    // 顶部标题
+    epaper_draw_string_8x8(8, 4, "Bitmap demo", true);
+    epaper_draw_hline(0, 16, EPD_W, true);
 
-    // ---- 下半屏：GFX 字体（baseline (x,y)） ----
-    epaper_draw_string_8x8(8, 38, "GFX FreeSansBold:", true);
+    // 同一份 16×16 bitmap 贴 5 处
+    // 1) 屏中央
+    const int cx = (EPD_W - 16) / 2;   // = 68
+    const int cy = (EPD_H - 16) / 2;   // = 68
+    draw_arrow(cx, cy);
 
-    // FreeSansBold9pt7b 的 yAdvance = 22；baseline 取 top + ~17（下伸预留 5）
-    const int y_baseline_1 = 38 + 14 + 17;   // = 69
-    epaper_draw_string_gfx(8, y_baseline_1, "Hello, IDF!", &FreeSansBold9pt7b, true);
+    // 中央那份外加方框（演示 bitmap 与图形基元叠加）
+    epaper_draw_rect(cx - 4, cy - 4, 16 + 8, 16 + 8, true);
 
-    // 居中显示一行
-    int w, h;
-    const char *centered = "centered";
-    epaper_get_text_bounds_gfx(centered, &FreeSansBold9pt7b, &w, &h);
-    int cx = (EPD_W - w) / 2;
-    epaper_draw_string_gfx(cx, y_baseline_1 + 24, centered, &FreeSansBold9pt7b, true);
-    ESP_LOGI(TAG, "centered: w=%d h=%d cx=%d", w, h, cx);
+    // 2)-5) 4 个角
+    draw_arrow(8,           24);              // 左上
+    draw_arrow(EPD_W - 24,  24);              // 右上
+    draw_arrow(8,           EPD_H - 24);      // 左下
+    draw_arrow(EPD_W - 24,  EPD_H - 24);      // 右下
 
-    // 多行（'\n' 换行测试）
-    epaper_draw_string_gfx(8, y_baseline_1 + 50, "line A\nline B",
-                            &FreeSansBold9pt7b, true);
+    // 说明文字：放在中央方框正下方（避开左下角箭头）
+    // "x5 same data" = 12 字符 × 8 = 96px 宽，居中 x = (152-96)/2 = 28
+    epaper_draw_string_8x8(28, cy + 16 + 8, "x5 same data", true);
 
     ESP_ERROR_CHECK(epaper_display_full());
     ESP_ERROR_CHECK(epaper_sleep());
 
-    ESP_LOGI(TAG, "节点 9 完成");
+    ESP_LOGI(TAG, "节点 10 完成：bitmap 已上屏");
 }

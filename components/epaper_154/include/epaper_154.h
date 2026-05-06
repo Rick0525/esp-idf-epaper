@@ -64,6 +64,14 @@ void epaper_draw_string_gfx(int x, int y, const char *s, const GFXfont *font, bo
 //   - 不考虑 '\n' 换行（多行调用方自己分行算）
 void epaper_get_text_bounds_gfx(const char *s, const GFXfont *font, int *out_w, int *out_h);
 
+// 把 1bit 位图贴到帧缓冲（透明覆盖语义）
+//   - bmp 按行 raster scan：每行 (w+7)/8 字节，行内 MSB 在左
+//   - bit=1 时画 black 参数指定的颜色（true=黑、false=白）
+//   - bit=0 时不动（保留底层像素）—— 类似"透明贴纸"
+//   - 越界部分自动裁剪；跟随 epaper_set_rotation 的旋转
+//   - 数据通常用 PIL/Pillow 由 PNG 转 1bit 生成：img.convert('1').tobytes()
+void epaper_draw_bitmap(int x, int y, const uint8_t *bmp, int w, int h, bool black);
+
 // 把帧缓冲写入显存并触发一次全刷新（约 1.6 秒，等 BUSY 拉到空闲后返回）
 // 内部含完整 IL0373 init 序列、5 张 LUT 下发、Power On
 esp_err_t epaper_display_full(void);
