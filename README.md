@@ -5,6 +5,10 @@ E-paper driver library for ESP32 / ESP-IDF.
 
 目前实现：ESP32-PICO-KIT v4.1 + 1.54" **0154T8 规格**黑白墨水屏（IL0373 控制器）的 ESP-IDF v6.0.1 **驱动库 + 示例工程**。
 
+<p align="center">
+  <img src="docs/images/demo.jpg" alt="WeiFeng WF0154T8 + ESP32-PICO-KIT v4.1 实物显示效果" width="320">
+</p>
+
 设计目标：做一个在 ESP-IDF 下**好复用的基础驱动库**，组件目录 `components/epaper_il0373_154t8/` 可整体拷到任何 IDF 项目即用。命名约定 `epaper_<chip>_<size>` 留出未来加其它屏的空间（如 `epaper_il3897_213/`）。视觉层不绑定 Arduino——`GxEPD2` 仅作为**实现层 ground truth**（init 序列、5 张 LUT、partial 流程严格照搬），上层 API 形态、字体选型、demo 风格自主决定。
 
 已验证屏体：WeiFeng `WF0154T8PCZ17230H`，与 Good Display `GDEW0154T8` 是同规格不同品牌的兼容屏（详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)）。
