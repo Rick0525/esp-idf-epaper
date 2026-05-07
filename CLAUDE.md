@@ -64,7 +64,7 @@ $IDF_PYTHON_ENV_PATH/bin/python $IDF_PATH/tools/idf.py -C $(pwd) build
 
 本项目的 IL0373 驱动实现照搬 Arduino [GxEPD2](https://github.com/ZinggJM/GxEPD2) 库的 `GxEPD2_154_T8` 类作 ground truth（顶部注释写明 `Controller: IL0373`）。后续做任何硬件移植**先看现有可工作的原代码**，不凭型号假设。
 
-### 默认硬件接线（要改改 `components/epaper_154/epaper_154.c` 顶部宏）
+### 默认硬件接线（要改改 `components/epaper_il0373_154t8/epaper_154.c` 顶部宏）
 
 | 信号 | ESP32 GPIO | 说明 |
 |---|---|---|

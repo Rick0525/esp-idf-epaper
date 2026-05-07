@@ -2,7 +2,7 @@
 
 ESP32-PICO-KIT v4.1 + 1.54" **0154T8 规格**黑白墨水屏（IL0373 控制器）的 ESP-IDF v6.0.1 **驱动库 + 示例工程**。
 
-设计目标：做一个在 ESP-IDF 下**好复用的基础驱动库**，组件目录 `components/epaper_154/` 可整体拷到任何 IDF 项目即用。视觉层不绑定 Arduino——`GxEPD2` 仅作为**实现层 ground truth**（init 序列、5 张 LUT、partial 流程严格照搬），上层 API 形态、字体选型、demo 风格自主决定。
+设计目标：做一个在 ESP-IDF 下**好复用的基础驱动库**，组件目录 `components/epaper_il0373_154t8/` 可整体拷到任何 IDF 项目即用。命名约定 `epaper_<chip>_<size>` 留出未来加其它屏的空间（如 `epaper_il3897_213/`）。视觉层不绑定 Arduino——`GxEPD2` 仅作为**实现层 ground truth**（init 序列、5 张 LUT、partial 流程严格照搬），上层 API 形态、字体选型、demo 风格自主决定。
 
 已验证屏体：WeiFeng `WF0154T8PCZ17230H`，与 Good Display `GDEW0154T8` 是同规格不同品牌的兼容屏（详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)）。
 
@@ -52,7 +52,7 @@ ESP32-PICO-KIT v4.1 + 1.54" **0154T8 规格**黑白墨水屏（IL0373 控制器�
 
 烧录默认 `main/main.c`（节点 10：bitmap 演示）后屏上显示同一份 16×16 上箭头 bitmap 贴 5 处（中央 + 4 角）+ 中央方框 + 顶部标题 + "x5 same data" 说明。
 
-`main/main.c` 是示例工程而非库本体——可随意改写。把它换成自己的应用代码不会影响 `components/epaper_154/` 库的任何东西。
+`main/main.c` 是示例工程而非库本体——可随意改写。把它换成自己的应用代码不会影响 `components/epaper_il0373_154t8/` 库的任何东西。
 
 ## 公开 API
 
@@ -176,7 +176,7 @@ epaper_draw_string_8x8(0, 0, "TOP-LEFT", true);   // 显示后的左上角
 
 GFX 字体只是数据，库代码无需任何改动：
 
-1. 从 [Adafruit-GFX-Library/Fonts/](https://github.com/adafruit/Adafruit-GFX-Library/tree/master/Fonts) 拷一个 `.h` 到 `components/epaper_154/fonts/`
+1. 从 [Adafruit-GFX-Library/Fonts/](https://github.com/adafruit/Adafruit-GFX-Library/tree/master/Fonts) 拷一个 `.h` 到 `components/epaper_il0373_154t8/fonts/`
 2. 把第二行 `#include <Adafruit_GFX.h>` 改成 `#include "gfxfont.h"`
 3. 在你的代码里 `#include "FreeXxxYpt7b.h"` 直接用
 
@@ -239,7 +239,7 @@ eink_screen/
 │   ├── CMakeLists.txt                 # PRIV_REQUIRES esp_timer
 │   └── main.c                         # 示例：bitmap 演示（按需自行替换）
 └── components/
-    └── epaper_154/                    # 整个目录拷到任何 IDF 项目即用
+    └── epaper_il0373_154t8/           # 整个目录拷到任何 IDF 项目即用
         ├── CMakeLists.txt             # PRIV_REQUIRES esp_driver_spi esp_driver_gpio
         ├── include/
         │   ├── epaper_154.h           # 公开 API

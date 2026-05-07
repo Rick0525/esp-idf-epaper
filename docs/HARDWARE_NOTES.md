@@ -57,7 +57,7 @@ WUXI VISION PEAK TECHNOLOGY: EPD
 
 ### RESOLUTION (0x61) 的设置位置
 
-`components/epaper_154/epaper_154.c::il0373_init_display()`：
+`components/epaper_il0373_154t8/epaper_154.c::il0373_init_display()`：
 
 ```c
 const uint8_t p[3] = { EPD_W, (EPD_H >> 8) & 0xFF, EPD_H & 0xFF };
