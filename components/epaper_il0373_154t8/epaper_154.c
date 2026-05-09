@@ -719,3 +719,25 @@ esp_err_t epaper_sleep(void)
     ESP_LOGI(TAG, "已进入 Deep Sleep");
     return ESP_OK;
 }
+
+// 仅关 DC-DC，寄存器/LUT/上一帧 RAM 全保留
+// 不动 s_using_partial_mode：信任 IL0373 在 POWER_OFF 期间内部状态完整，
+// 下次 partial 可跳过 il0373_init_partial() 重发
+esp_err_t epaper_power_off(void)
+{
+    esp_err_t err;
+    if ((err = send_cmd(IL0373_POWER_OFF)) != ESP_OK) return err;
+    if ((err = wait_busy_idle(EPD_BUSY_TIMEOUT_MS, "PowerOff")) != ESP_OK) return err;
+    ESP_LOGD(TAG, "DC-DC 已关闭");
+    return ESP_OK;
+}
+
+// 重启 DC-DC，等 BUSY 拉到空闲（典型 ~60ms）
+esp_err_t epaper_power_on(void)
+{
+    esp_err_t err;
+    if ((err = send_cmd(IL0373_POWER_ON)) != ESP_OK) return err;
+    if ((err = wait_busy_idle(EPD_BUSY_TIMEOUT_MS, "PowerOn")) != ESP_OK) return err;
+    ESP_LOGD(TAG, "DC-DC 已开启");
+    return ESP_OK;
+}

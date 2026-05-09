@@ -84,5 +84,15 @@ esp_err_t epaper_display_full(void);
 //   - 频繁 partial 后建议每 N 次做一次 epaper_display_full() 清屏
 esp_err_t epaper_display_partial(int x, int y, int w, int h);
 
+// 仅关 DC-DC（POWER_OFF 0x02），寄存器/LUT/上一帧 RAM 全保留
+//   - 用途：CPU light sleep 等"短暂停"前调用，避免屏被持续 DC 偏置导致黑边累积
+//   - 唤醒：epaper_power_on() 重启 DC-DC（~60ms），之后可直接 partial/full
+//   - 和 epaper_sleep() 区别：sleep 是深睡丢状态，power_off 仅断电保状态
+esp_err_t epaper_power_off(void);
+
+// 重启 DC-DC（POWER_ON 0x04），等 BUSY 拉到空闲（典型 ~60ms）
+// 必须配合 epaper_power_off() 使用；deep sleep 后无效（应走 epaper_init 重新初始化）
+esp_err_t epaper_power_on(void);
+
 // Power Off + Deep Sleep。下次使用前需重新 epaper_init
 esp_err_t epaper_sleep(void);
