@@ -232,8 +232,46 @@ partial LUT 在 GxEPD2_154_T8.cpp 同文件下方 `lut_*_partial` 数组，按�
 | 花屏 / 残影 | 字节内位序反；DTM1/DTM2 顺序错（首次必须 DTM1 + 全 0xFF） |
 | 字符变形 | 字体位序与帧缓冲位序不一致（如 8×8 字体 LSB 在左 vs 帧缓冲 MSB 对应较小 X） |
 | 屏物理边内一圈白边 | **不是 bug**——0154T8 物理像素阵列略大于 152×152，外圈像素不在 RAM 寻址范围，是固有特性 |
+| 局刷后屏边缘慢慢长出黑边 | DC-DC 没断，CPU 又进了 light sleep——面板被静态 DC 持续偏置；见 §11 |
 
-## 11. 移植到不同 MCU/框架
+## 11. 长时间空闲与电源管理
+
+局刷流程结尾只发 `PARTIAL_OUT (0x92)`，**不发 `POWER_OFF`**——控制器的 DC-DC 仍在工作。如果调用方紧接着进入 CPU light sleep（秒级或更久）而不主动断屏电源，会出现：
+
+1. 波形引擎无新指令 → 停在最后状态
+2. 面板内电压变成静态 DC 偏置
+3. 电泳介质在持续 DC 下慢慢漂移 → **从屏边缘开始累积成肉眼可见的黑边**
+
+时长越长越严重；一次几十秒级的 light sleep 反复多次后非常明显。
+
+### 三种电源状态对比
+
+| 状态 | 命令 | DC-DC | 寄存器/LUT | 上一帧 RAM | 唤醒成本 | 适用 |
+|---|---|---|---|---|---|---|
+| 工作中 | — | 开 | 有 | 有 | — | 持续刷新 |
+| `epaper_power_off()` | `0x02` | 关 | 保留 | 保留 | `epaper_power_on()` ~60ms | light sleep 数十秒级 |
+| `epaper_sleep()` | `0x02` + `0x07 0xA5` | 关 | 丢 | 丢 | hw_reset + init + **必须先 full** 一次 | deep sleep 长期 / 程序退出 |
+
+`epaper_sleep()` 后 RAM 丢失，下一次必须先做一次全刷重建基线，partial 拿不到上一帧。要避免黑边又想保留 partial 状态，请用 `epaper_power_off()` / `epaper_power_on()`。
+
+### 推荐调用顺序
+
+```c
+// 短暂停循环（典型场景：分钟级数据轮询）
+while (running) {
+    epaper_power_off();           // 断 DC-DC
+    cpu_light_sleep(30);          // CPU 进 light sleep（库外职责）
+    epaper_power_on();            // 重启 DC-DC
+
+    update_data();
+    epaper_display_partial(x, y, w, h);
+}
+
+// 程序退出 / 长时间不用
+epaper_sleep();
+```
+
+## 12. 移植到不同 MCU/框架
 
 驱动逻辑完全平台无关。需要平台提供的最小能力：
 
@@ -249,7 +287,7 @@ partial LUT 在 GxEPD2_154_T8.cpp 同文件下方 `lut_*_partial` 数组，按�
 
 跨平台要改的代码量：只有 GPIO 操作 + SPI 写字节 + delay 这三类系统调用的封装；纯协议部分（命令字节、LUT 数据、流程顺序）原样可用。
 
-## 12. 参考资料
+## 13. 参考资料
 
 - **Arduino GxEPD2 库**（移植 IL0373 屏的"圣经"，ground truth）：
   - 仓库：https://github.com/ZinggJM/GxEPD2

@@ -23,7 +23,7 @@ E-paper driver library for ESP32 / ESP-IDF.
 | **字体（点阵）** | `draw_string_8x8` — 复古 8×8 ASCII | 4 |
 | **字体（比例）** | `draw_string_gfx` / `get_text_bounds_gfx` — Adafruit_GFX 兼容格式 | 9 |
 | **bitmap** | `draw_bitmap` — 1bit 透明覆盖 | 10 |
-| **显示** | `display_full` (~1.6s) / `display_partial` (~360ms) / `sleep` | 2, 8 |
+| **显示** | `display_full` (~1.6s) / `display_partial` (~360ms) / `power_off` / `power_on` / `sleep` | 2, 8, 11 |
 
 物理分辨率 **152×152**；坐标原点在屏左上（rotation=0 时）。
 
@@ -66,8 +66,10 @@ E-paper driver library for ESP32 / ESP-IDF.
 ```c
 #include "epaper_154.h"
 
-// ---- 初始化 ----
+// ---- 初始化 / 电源 ----
 esp_err_t epaper_init(void);                          // SPI/GPIO 初始化 + 硬件复位
+esp_err_t epaper_power_off(void);                     // 仅断 DC-DC，保留寄存器/LUT/RAM；light sleep 前调
+esp_err_t epaper_power_on(void);                      // 重启 DC-DC，~60ms；power_off 后调
 esp_err_t epaper_sleep(void);                         // POWER_OFF + DEEP_SLEEP（唤醒只能硬复位）
 
 // ---- 帧缓冲填充（不动屏） ----
