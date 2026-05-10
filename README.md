@@ -255,9 +255,12 @@ eink_screen/
 ├── docs/
 │   ├── HARDWARE_NOTES.md              # 硬件特性研究笔记 + 字体方案选型
 │   └── EPAPER_IL0373_GUIDE.md         # IL0373 通用驱动笔记（任何 0154T8 屏可参考）
+├── demos/                             # 每屏一个 demo 文件，导出 void demo_run(void)
+│   ├── demo_154t8.c                   # 1.54" 黑白仪表盘 demo（partial 计数器 + 结束页）
+│   └── demo_42bwr.c                   # 4.2" BWR 三色 demo（竖条 + GFX 字体 + 红字框）
 ├── main/
-│   ├── CMakeLists.txt                 # REQUIRES <driver>，切屏改这一行
-│   └── main.c                         # 示例：当前为 4.2" BWR 分阶段 bringup（按需替换）
+│   ├── CMakeLists.txt                 # SRCS 选 demo 文件 + REQUIRES 选驱动（切屏改这两行）
+│   └── main.c                         # 3 行 dispatcher：app_main → demo_run（不要改）
 └── components/
     ├── epaper_il0373_154t8/           # 1.54" 黑白驱动；整个目录拷到任何 IDF 项目即用
     │   ├── CMakeLists.txt             # PRIV_REQUIRES esp_driver_spi esp_driver_gpio
@@ -283,35 +286,41 @@ eink_screen/
 
 ## 切换驱动 / 切换屏
 
-两块屏共用同一组 GPIO（见上文接线表），物理换屏即可。代码侧只改一处：
+两块屏共用同一组 GPIO（见上文接线表），物理换屏即可。代码侧 `main/CMakeLists.txt` 改两行（`SRCS` 选 demo 文件 + `REQUIRES` 选驱动），`main/main.c` 是 3 行调度器，**不要改**：
 
 ```cmake
 # main/CMakeLists.txt
 idf_component_register(
-    SRCS "main.c"
+    SRCS "main.c" "../demos/demo_42bwr.c"      # ← 1.54": ../demos/demo_154t8.c
     INCLUDE_DIRS "."
-    REQUIRES epaper_uc8276_42bwr      # ← 1.54": epaper_il0373_154t8
+    REQUIRES epaper_uc8276_42bwr               # ← 1.54": epaper_il0373_154t8
     PRIV_REQUIRES esp_timer
 )
 ```
 
-然后 `main.c` 改 include 与 API 调用：
+每个 demo 文件全自包含、导出 `void demo_run(void)`，`main.c` 通过 extern 调用一次：
 
 ```c
-// 1.54" 黑白
-#include "epaper_154.h"
-epaper_init(); epaper_clear(0xFF);
-epaper_draw_string_8x8(10, 10, "hi", true);
-epaper_display_full();
-
-// 4.2" BWR
-#include "epaper_42bwr.h"
-epaper_42_init(); epaper_42_clear(EPD42_WHITE);
-epaper_42_draw_string_8x8(10, 10, "hi", EPD42_RED);
-epaper_42_display_full();   // 注意：~18 秒
+// main/main.c
+extern void demo_run(void);
+void app_main(void) { demo_run(); }
 ```
 
-不要在同一固件里同时 link 两个组件——`spi_bus_initialize(SPI3_HOST,...)` 会被调用两次，第二次返回 `ESP_ERR_INVALID_STATE`。
+**加新屏的工作流**：
+
+1. 在 `components/` 加新驱动组件 `epaper_<chip>_<size>/`
+2. 在 `demos/` 加新 demo 文件 `demo_<size>.c`，里面 include 新驱动头、实现 `demo_run`
+3. `main/CMakeLists.txt` 改两行选新 demo + 新 REQUIRES
+4. build / flash / 看屏
+
+**不要在同一固件里同时 link 两个驱动组件**——`spi_bus_initialize(SPI3_HOST,...)` 会被调用两次，第二次返回 `ESP_ERR_INVALID_STATE`。如以后真要驱多块屏，需先抽个共享 SPI bus 初始化层。
+
+### 各 demo 现成内容
+
+| demo 文件 | 驱动 | 内容 |
+|---|---|---|
+| `demos/demo_154t8.c` | `epaper_il0373_154t8` | 仪表盘风格：bitmap + GFX 标题 + 8x8 特性列表 + partial 计数器/进度条 + 结束页（覆盖全 API） |
+| `demos/demo_42bwr.c` | `epaper_uc8276_42bwr` | 三色竖条 + GFX 标题 + 红字框 + 8x8 副标题（覆盖三色 + 字体 + 矩形） |
 
 ## 实测笔记
 
