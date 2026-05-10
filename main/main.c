@@ -1,22 +1,14 @@
-// 主程序入口
-// 综合演示：仪表盘风格 demo，覆盖驱动库的全部能力域
+// 4.2" BWR 墨水屏分阶段硬件验证
 //
-// 阶段 1（首次 full，~1.6s）：画静态布局
-//   - 顶部：16×16 上箭头 bitmap + GFX FreeSansBold 标题
-//   - 中段：4 行 8×8 字体的特性列表（每行前一个实心方块 bullet）
-//   - 下段：计数器框 + 进度条框（占位，等 partial 填）
+// 通过宏 BRINGUP_STAGE 切换不同测试场景，从最简单开始逐步加复杂度：
+//   A 整屏白：验证 init / SPI / BUSY / 电源时序 / deep sleep
+//   B 整屏黑：验证黑层 buffer 字节方向、0x10 命令、像素编码"黑"分支
+//   C 整屏红：验证红层 buffer、0x13 命令、红是 bit=0 的反向编码
+//   D 三色竖条 + GFX 字体：验证绘图原语 + 三色边界
 //
-// 阶段 2（5 次 partial，每次 ~360ms）：刷新动态区
-//   - 计数器数字（GFX 字体）每秒 +20
-//   - 进度条按 1/5 推进
-//   - "step N/5" 标签同步
-//   - 一次 partial 同时刷新这三个元素（共用一个矩形窗口）
-//
-// 阶段 3（末次 full）：切换到结束页
-//   - 居中 GFX 大字 "Demo done!"
-//   - 8×8 小字统计本次刷新次数
+// 修改 BRINGUP_STAGE 后 idf.py build flash monitor 看屏。
 
-#include "epaper_154.h"
+#include "epaper_42bwr.h"
 #include "FreeSansBold9pt7b.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -25,155 +17,71 @@
 
 static const char *TAG = "MAIN";
 
-// ---- 16×16 上箭头 bitmap ----
-static const uint8_t arrow_up_16x16[] = {
-    0x01, 0x80, 0x03, 0xC0, 0x07, 0xE0, 0x0F, 0xF0,
-    0x1F, 0xF8, 0x3F, 0xFC, 0x7F, 0xFE, 0xFF, 0xFF,
-    0x03, 0xC0, 0x03, 0xC0, 0x03, 0xC0, 0x03, 0xC0,
-    0x03, 0xC0, 0x03, 0xC0, 0x03, 0xC0, 0x03, 0xC0,
-};
+#define BRINGUP_STAGE 'A'
 
-// ---- 8×8 实心圆点 bullet ----
-static const uint8_t bullet_8x8[] = {
-    0x00,
-    0x00,
-    0x3C,  // ..####..
-    0x7E,  // .######.
-    0x7E,  // .######.
-    0x3C,  // ..####..
-    0x00,
-    0x00,
-};
-
-// ---- 动态区窗口（partial 刷新范围）----
-// 包含：计数器（y≈80..100）、进度条（y≈108..120）、step 标签（y≈124..132）
-// partial 要求 x、w 8 对齐：取整屏宽 0..152，刷的全部宽度（库会自动对齐到 0..152）
-#define DYN_X 0
-#define DYN_Y 76
-#define DYN_W EPD_W
-#define DYN_H 60
-
-#define COUNTER_MAX 5
-
-static void draw_static_layout(void)
+static void stage_a_white(void)
 {
-    epaper_clear(0xFF);
-
-    // 顶部：bitmap + GFX 标题
-    epaper_draw_bitmap(4, 4, arrow_up_16x16, 16, 16, true);
-    epaper_draw_string_gfx(26, 18, "Demo!", &FreeSansBold9pt7b, true);
-    epaper_draw_hline(0, 24, EPD_W, true);
-
-    // 特性列表
-    epaper_draw_string_8x8(4, 30, "Features:", true);
-    const char *items[] = {
-        "8x8 + GFX font",
-        "draw bitmap",
-        "rect + fill",
-        "partial refresh",
-    };
-    for (int i = 0; i < 4; i++) {
-        int y = 42 + i * 9;
-        epaper_draw_bitmap(6, y, bullet_8x8, 8, 8, true);
-        epaper_draw_string_8x8(18, y, items[i], true);
-    }
-
-    // 横线分隔
-    epaper_draw_hline(0, 78, EPD_W, true);
-
-    // 动态区：计数器框（左）+ 进度条框（下）+ step 标签占位
-    // 计数器："Count:" 标签 + 数字框
-    epaper_draw_string_8x8(4, 84, "Count:", true);
-    epaper_draw_rect(56, 80, 88, 16, true);
-
-    // 进度条边框
-    epaper_draw_rect(8, 108, EPD_W - 16, 10, true);
-
-    // step 标签（partial 填）
-    // 在末尾画一个分隔小线表示 step 区下方
+    ESP_LOGI(TAG, "阶段 A：整屏白");
+    epaper_42_clear(EPD42_WHITE);
 }
 
-static void update_dynamic(int step)
+static void stage_b_black(void)
 {
-    // 1. 计数器数字
-    epaper_fill_rect(57, 81, 86, 14, false);   // 清白计数框内壁
-    char num[8];
-    snprintf(num, sizeof(num), "%d", step * 20);
-    int w, h;
-    epaper_get_text_bounds_gfx(num, &FreeSansBold9pt7b, &w, &h);
-    int cx = 56 + (88 - w) / 2;
-    epaper_draw_string_gfx(cx, 80 + 13, num, &FreeSansBold9pt7b, true);
-
-    // 2. 进度条填充
-    int bar_inner_w = (EPD_W - 16) - 4;     // 内宽 132
-    int filled = bar_inner_w * step / COUNTER_MAX;
-    epaper_fill_rect(10, 110, bar_inner_w, 6, false);     // 先清
-    epaper_fill_rect(10, 110, filled,       6, true);     // 再填
-
-    // 3. step 标签
-    epaper_fill_rect(4, 124, 80, 8, false);   // 清旧
-    char label[16];
-    snprintf(label, sizeof(label), "step %d/%d", step, COUNTER_MAX);
-    epaper_draw_string_8x8(4, 124, label, true);
+    ESP_LOGI(TAG, "阶段 B：整屏黑");
+    epaper_42_clear(EPD42_BLACK);
 }
 
-static void draw_done_page(int partial_count)
+static void stage_c_red(void)
 {
-    epaper_clear(0xFF);
+    ESP_LOGI(TAG, "阶段 C：整屏红");
+    epaper_42_clear(EPD42_RED);
+}
 
-    // 居中 GFX 大字
-    int w, h;
-    const char *msg = "Demo done!";
-    epaper_get_text_bounds_gfx(msg, &FreeSansBold9pt7b, &w, &h);
-    int cx = (EPD_W - w) / 2;
-    epaper_draw_string_gfx(cx, 60, msg, &FreeSansBold9pt7b, true);
+static void stage_d_demo(void)
+{
+    ESP_LOGI(TAG, "阶段 D：三色竖条 + GFX 字体 demo");
+    epaper_42_clear(EPD42_WHITE);
 
-    // 装饰横线
-    epaper_draw_hline(20, 70, EPD_W - 40, true);
+    // 三色竖条：左 1/3 白（保持）、中 1/3 黑、右 1/3 红
+    int third = EPD42_W / 3;
+    epaper_42_fill_rect(third,     0, third, EPD42_H, EPD42_BLACK);
+    epaper_42_fill_rect(third * 2, 0, EPD42_W - third * 2, EPD42_H, EPD42_RED);
 
-    // 统计 8x8
-    char stat1[32], stat2[32];
-    snprintf(stat1, sizeof(stat1), "%d partial done", partial_count);
-    snprintf(stat2, sizeof(stat2), "+ 2 full refresh");
-    epaper_draw_string_8x8(20, 86, stat1, true);
-    epaper_draw_string_8x8(20, 100, stat2, true);
+    // 顶部黑色 GFX 标题（baseline y）
+    epaper_42_draw_string_gfx(8, 24, "ESP-IDF 4.2\" BWR", &FreeSansBold9pt7b, EPD42_BLACK);
 
-    // 底部装饰：4 个上箭头点缀
-    for (int i = 0; i < 4; i++) {
-        epaper_draw_bitmap(4 + i * 36, 124, arrow_up_16x16, 16, 16, true);
-    }
+    // 中段黑边白底矩形 + 内嵌红字
+    int box_x = 60, box_y = 120, box_w = EPD42_W - 120, box_h = 60;
+    epaper_42_fill_rect(box_x, box_y, box_w, box_h, EPD42_WHITE);
+    epaper_42_draw_rect(box_x, box_y, box_w, box_h, EPD42_BLACK);
+    int tw, th;
+    const char *msg = "Hello!";
+    epaper_42_get_text_bounds_gfx(msg, &FreeSansBold9pt7b, &tw, &th);
+    int tx = box_x + (box_w - tw) / 2;
+    int ty = box_y + box_h / 2 + 6;
+    epaper_42_draw_string_gfx(tx, ty, msg, &FreeSansBold9pt7b, EPD42_RED);
+
+    // 底部红色 8x8 字体
+    epaper_42_draw_string_8x8(8, EPD42_H - 16, "WeiFeng 4.2 BWR / UC8276 OTP-LUT", EPD42_RED);
 }
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "boot ok - 综合 demo 启动");
+    ESP_LOGI(TAG, "boot ok - 阶段 %c", BRINGUP_STAGE);
 
-    ESP_ERROR_CHECK(epaper_init());
-    epaper_set_rotation(0);
+    ESP_ERROR_CHECK(epaper_42_init());
 
-    // ---- 阶段 1：首次 full ----
-    draw_static_layout();
-    update_dynamic(0);                         // step 0 占位
-    ESP_ERROR_CHECK(epaper_display_full());
-    ESP_LOGI(TAG, "阶段 1：静态布局已上屏（full）");
-
-    vTaskDelay(pdMS_TO_TICKS(800));
-
-    // ---- 阶段 2：partial 循环 ----
-    for (int i = 1; i <= COUNTER_MAX; i++) {
-        update_dynamic(i);
-        ESP_ERROR_CHECK(epaper_display_partial(DYN_X, DYN_Y, DYN_W, DYN_H));
-        ESP_LOGI(TAG, "阶段 2：partial step %d/%d 完成", i, COUNTER_MAX);
-        vTaskDelay(pdMS_TO_TICKS(700));
+    switch (BRINGUP_STAGE) {
+        case 'A': stage_a_white(); break;
+        case 'B': stage_b_black(); break;
+        case 'C': stage_c_red();   break;
+        case 'D': stage_d_demo();  break;
+        default:  stage_a_white(); break;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1200));
+    ESP_ERROR_CHECK(epaper_42_display_full());
+    ESP_LOGI(TAG, "上屏完成，准备 deep sleep");
 
-    // ---- 阶段 3：末次 full 切换结束页 ----
-    draw_done_page(COUNTER_MAX);
-    ESP_ERROR_CHECK(epaper_display_full());
-    ESP_LOGI(TAG, "阶段 3：结束页已上屏（full）");
-
-    ESP_ERROR_CHECK(epaper_sleep());
-    ESP_LOGI(TAG, "综合 demo 完成");
+    ESP_ERROR_CHECK(epaper_42_sleep());
+    ESP_LOGI(TAG, "demo 结束");
 }
