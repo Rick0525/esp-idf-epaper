@@ -17,7 +17,7 @@
 
 static const char *TAG = "MAIN";
 
-#define BRINGUP_STAGE 'B'
+#define BRINGUP_STAGE 'C'
 
 static void stage_a_white(void)
 {
