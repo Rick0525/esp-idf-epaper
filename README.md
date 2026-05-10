@@ -3,15 +3,26 @@
 E-paper driver library for ESP32 / ESP-IDF.
 基于 ESP-IDF 的 ESP32 系列墨水屏驱动库。
 
-目前实现：ESP32-PICO-KIT v4.1 + 1.54" **0154T8 规格**黑白墨水屏（IL0373 控制器）的 ESP-IDF v6.0.1 **驱动库 + 示例工程**。
+目前实现两块屏的 ESP-IDF v6.0.1 **驱动库 + 示例工程**：
+
+| 屏 | 控制器 | 分辨率 | 颜色 | 局刷 | 全刷耗时 | 组件 |
+|---|---|---|---|---|---|---|
+| 1.54" 0154T8 规格 | IL0373 | 152×152 | 黑/白 | ✅ ~360ms | ~1.6s | `components/epaper_il0373_154t8/` |
+| 4.2" Good Display BWR 系列 | UC8176 / UC8276 / IL0398 | 400×300 | 黑/白/红 | ❌ | ~18s | `components/epaper_uc8276_42bwr/` |
+
+通过 `main/CMakeLists.txt` 的 `REQUIRES` 切换驱动；两块屏共用同一组 GPIO（CS=5 / MOSI=23 / SCK=18 / DC=27 / RST=33 / BUSY=14），物理上换屏即可。
 
 <p align="center">
   <img src="docs/images/demo.jpg" alt="WeiFeng WF0154T8 + ESP32-PICO-KIT v4.1 实物显示效果" width="320">
 </p>
 
-设计目标：做一个在 ESP-IDF 下**好复用的基础驱动库**，组件目录 `components/epaper_il0373_154t8/` 可整体拷到任何 IDF 项目即用。命名约定 `epaper_<chip>_<size>` 留出未来加其它屏的空间（如 `epaper_il3897_213/`）。视觉层不绑定 Arduino——`GxEPD2` 仅作为**实现层 ground truth**（init 序列、5 张 LUT、partial 流程严格照搬），上层 API 形态、字体选型、demo 风格自主决定。
+设计目标：做一个在 ESP-IDF 下**好复用的基础驱动库**，组件目录可整体拷到任何 IDF 项目即用。命名约定 `epaper_<chip>_<size><spec>` 留出加其它屏的空间。视觉层不绑定 Arduino——`GxEPD2` 仅作为**实现层 ground truth**（init 序列、LUT、partial 流程严格照搬或参考），上层 API 形态、字体选型、demo 风格自主决定。
 
-已验证屏体：WeiFeng `WF0154T8PCZ17230H`，与 Good Display `GDEW0154T8` 是同规格不同品牌的兼容屏（详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)）。
+已验证屏体：
+- 1.54": WeiFeng `WF0154T8PCZ17230H`（与 Good Display `GDEW0154T8` 同规格）
+- 4.2" BWR: 标识码 `10180265-05 / P-1801013 / VE2417...`，2017-2018 制（Good Display 4.2 BWR 系列代工，UC8276 命令集兼容）
+
+详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)。
 
 ## 库能力一览
 
@@ -245,20 +256,62 @@ eink_screen/
 │   ├── HARDWARE_NOTES.md              # 硬件特性研究笔记 + 字体方案选型
 │   └── EPAPER_IL0373_GUIDE.md         # IL0373 通用驱动笔记（任何 0154T8 屏可参考）
 ├── main/
-│   ├── CMakeLists.txt                 # PRIV_REQUIRES esp_timer
-│   └── main.c                         # 示例：bitmap 演示（按需自行替换）
+│   ├── CMakeLists.txt                 # REQUIRES <driver>，切屏改这一行
+│   └── main.c                         # 示例：当前为 4.2" BWR 分阶段 bringup（按需替换）
 └── components/
-    └── epaper_il0373_154t8/           # 整个目录拷到任何 IDF 项目即用
-        ├── CMakeLists.txt             # PRIV_REQUIRES esp_driver_spi esp_driver_gpio
+    ├── epaper_il0373_154t8/           # 1.54" 黑白驱动；整个目录拷到任何 IDF 项目即用
+    │   ├── CMakeLists.txt             # PRIV_REQUIRES esp_driver_spi esp_driver_gpio
+    │   ├── include/
+    │   │   ├── epaper_154.h           # 公开 API（draw_*、display_full/partial、power_*、sleep）
+    │   │   └── gfxfont.h              # GFXglyph/GFXfont 结构定义（PROGMEM 兼容）
+    │   ├── fonts/
+    │   │   └── FreeSansBold9pt7b.h    # 默认字体
+    │   ├── epaper_154.c               # 驱动实现 + 帧缓冲 + 5 张 LUT + 渲染器
+    │   ├── il0373_cmd.h               # IL0373 命令字节宏
+    │   └── font8x8_basic.h            # dhepper 公共域 8×8 字体
+    └── epaper_uc8276_42bwr/           # 4.2" 黑白红驱动；同样可整体拷
+        ├── CMakeLists.txt
         ├── include/
-        │   ├── epaper_154.h           # 公开 API
-        │   └── gfxfont.h              # GFXglyph/GFXfont 结构定义（PROGMEM 兼容）
-        ├── fonts/                     # GFX 字体目录，可任意添加 .h
-        │   └── FreeSansBold9pt7b.h    # 默认字体
-        ├── epaper_154.c               # 驱动实现 + 帧缓冲 + LUT + 渲染器
-        ├── il0373_cmd.h               # IL0373 命令字节宏
-        └── font8x8_basic.h            # dhepper 公共域 8×8 字体
+        │   ├── epaper_42bwr.h         # 公开 API（带 epd42_color_t 枚举）
+        │   └── gfxfont.h
+        ├── fonts/
+        │   └── FreeSansBold9pt7b.h
+        ├── epaper_42bwr.c             # 驱动实现 + 双层 framebuffer（黑/红）+ OTP 波形
+        ├── uc8276_cmd.h               # UC8276 命令字节宏
+        └── font8x8_basic.h
 ```
+
+## 切换驱动 / 切换屏
+
+两块屏共用同一组 GPIO（见上文接线表），物理换屏即可。代码侧只改一处：
+
+```cmake
+# main/CMakeLists.txt
+idf_component_register(
+    SRCS "main.c"
+    INCLUDE_DIRS "."
+    REQUIRES epaper_uc8276_42bwr      # ← 1.54": epaper_il0373_154t8
+    PRIV_REQUIRES esp_timer
+)
+```
+
+然后 `main.c` 改 include 与 API 调用：
+
+```c
+// 1.54" 黑白
+#include "epaper_154.h"
+epaper_init(); epaper_clear(0xFF);
+epaper_draw_string_8x8(10, 10, "hi", true);
+epaper_display_full();
+
+// 4.2" BWR
+#include "epaper_42bwr.h"
+epaper_42_init(); epaper_42_clear(EPD42_WHITE);
+epaper_42_draw_string_8x8(10, 10, "hi", EPD42_RED);
+epaper_42_display_full();   // 注意：~18 秒
+```
+
+不要在同一固件里同时 link 两个组件——`spi_bus_initialize(SPI3_HOST,...)` 会被调用两次，第二次返回 `ESP_ERR_INVALID_STATE`。
 
 ## 实测笔记
 
