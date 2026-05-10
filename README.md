@@ -20,9 +20,9 @@ E-paper driver library for ESP32 / ESP-IDF.
 
 已验证屏体：
 - 1.54": WeiFeng `WF0154T8PCZ17230H`（与 Good Display `GDEW0154T8` 同规格）
-- 4.2" BWR: 标识码 `10180265-05 / P-1801013 / VE2417...`，2017-2018 制（Good Display 4.2 BWR 系列代工，UC8276 命令集兼容）
+- 4.2" BWR: **SES-Imagotag VUSION GL340 电子价签**拆机屏（2017-2018 制，UC8276 命令集兼容）
 
-详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)。
+详见 [`docs/HARDWARE_NOTES.md`](docs/HARDWARE_NOTES.md)（含购买来源、丝印、FPC 排线编号）。
 
 ## 库能力一览
 
